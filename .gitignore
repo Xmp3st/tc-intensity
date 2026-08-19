@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.ipynb_checkpoints/
+
+# 训练产物（权重/日志/指标），体积大，不入库
+outputs/
+*.ckpt
+*.pth
+*.pt
+*.log
+
+# 数据（图片与标注通常很大，单独管理或用 Git LFS / 外部存储）
+data/synthetic/
+data/raw/
+data/processed/
+*.png
+*.jpg
+*.jpeg
+
+# 系统
+.DS_Store
+Thumbs.db

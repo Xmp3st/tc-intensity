@@ -1,0 +1,10 @@
+# 北太平洋热带气旋强度识别框架 · 依赖
+# 当前 dl_env 已验证：torch 2.11.0+cu128 / torchvision 0.26.0+cu128 / CUDA 12.8
+torch>=2.0
+torchvision>=0.15
+numpy
+pillow
+pyyaml
+
+# 可选（非必需）：tensorboard 用于可视化训练曲线
+# tensorboard>=2.0
