@@ -1,0 +1,91 @@
+# =============================================================================
+# 热带气旋（北太平洋）强度识别 · 默认配置
+# -----------------------------------------------------------------------------
+# 本文件是整套框架的"单一调节入口"。绝大多数超参数都可在这里修改；
+# 也可以用命令行 --set 键=值 临时覆盖，例如：
+#   python train.py --set model.backbone=resnet50 train.batch_size=64
+# 支持的覆盖类型会自动推断：整数 / 浮点数 / 布尔 / null / 字符串。
+# =============================================================================
+
+experiment:
+  name: "tc_intensity_baseline"   # 实验名，用于 outputs 子目录命名
+  seed: 42                        # 随机种子，保证可复现
+  output_dir: "outputs"           # 所有产物（日志/权重/指标）的根目录
+  num_workers: 4                  # DataLoader 进程数
+
+# -----------------------------------------------------------------------------
+# 数据：支持 classification（分类 6 级强度）或 regression（回归风速 m/s）
+# 数据组织支持两种模式：
+#   csv    —— 一个 CSV（label_file），列含 image_path 与标签，按 split 比例自动切分
+#   folder —— 按 data/folder_root 下以"类别名"命名的子文件夹组织
+# -----------------------------------------------------------------------------
+data:
+  mode: "csv"                     # csv | folder
+  task: "classification"          # classification | regression
+  root_dir: "data"                # 图片相对根目录（csv 模式下 image_path 可相对它解析）
+  label_file: "data/labels.csv"   # csv 模式：标签文件
+  folder_root: "data/processed"   # folder 模式：类别子文件夹所在根
+  split: [0.7, 0.15, 0.15]        # 训练/验证/测试 切分比例（csv 模式）
+  image_size: 224                 # 输入图像边长（正方形，短边预处理后居中裁剪到该尺寸）
+  # 北太平洋（西北太平洋 CMA 分级）6 级强度，由弱到强
+  class_names: ["TD", "TS", "STS", "TY", "STY", "SuperTY"]
+  # 回归目标列名（仅 regression 模式生效），单位 m/s
+  regression_target: "wind_speed_ms"
+  # ImageNet 均值/方差，配合 torchvision 预训练权重
+  mean: [0.485, 0.456, 0.406]
+  std: [0.229, 0.224, 0.225]
+
+# -----------------------------------------------------------------------------
+# 数据增强：train / val 分别配置。把某项设为 false 即关闭该增强。
+# -----------------------------------------------------------------------------
+augmentation:
+  train:
+    random_resized_crop: true     # 随机缩放裁剪到 image_size
+    horizontal_flip: true         # 随机水平翻转（台风无方向性，安全）
+    rotate: 15                    # 随机旋转角度上限（度）
+    color_jitter: [0.2, 0.2, 0.2, 0.0]  # 亮度/对比度/饱和度/色相抖动
+    normalize: true               # 是否做 ImageNet 归一化
+  val:
+    resize: 256                   # 先缩放到 256
+    center_crop: 224              # 再居中裁剪到 image_size
+    normalize: true
+
+# -----------------------------------------------------------------------------
+# 模型：可插拔骨干网络
+#   resnet18 / resnet34 / resnet50 / resnet101
+#   efficientnet_b0 / efficientnet_b1
+#   mobilenet_v3_small            （轻量，适合边缘部署）
+#   vit_b_16                      （Transformer，需更多数据）
+# -----------------------------------------------------------------------------
+model:
+  backbone: "resnet18"
+  pretrained: true                # 是否加载 torchvision 预训练权重
+  freeze_backbone: false          # true 时冻结骨干，只训头部（小数据集迁移学习）
+  dropout: 0.3                    # 头部 dropout，防过拟合
+  reg_hidden: 128                 # 回归头隐藏层维度（仅 regression 模式）
+
+# -----------------------------------------------------------------------------
+# 训练
+# -----------------------------------------------------------------------------
+train:
+  epochs: 50
+  batch_size: 32
+  optimizer: "adamw"              # adam | adamw | sgd
+  lr: 3.0e-4
+  weight_decay: 1.0e-2
+  scheduler: "cosine"             # none | step | cosine | plateau
+  lr_step_size: 10                # step 调度：每隔多少 epoch 衰减
+  lr_gamma: 0.1                   # step 调度：衰减倍数
+  label_smoothing: 0.0            # 分类标签平滑（0 = 关闭）
+  loss: "auto"                    # auto | cross_entropy | mse | huber
+  mixed_precision: true           # 开启 AMP 混合精度（省显存、提速）
+  grad_clip: 0.0                  # 梯度裁剪（0 = 关闭）
+  early_stopping_patience: 10     # 验证指标多少个 epoch 无提升则停
+  save_top_k: 3                   # 保留验证指标最好的 k 个 checkpoint
+  log_every: 20                   # 每多少 batch 打印一次训练日志
+
+# -----------------------------------------------------------------------------
+# 设备：auto 自动优先 CUDA，否则 CPU
+# -----------------------------------------------------------------------------
+device:
+  mode: "auto"                    # auto | cuda | cpu

@@ -1,0 +1,58 @@
+# 预设：北太平洋台风强度「分类」任务（6 级 CMA 强度）
+# 用法: python train.py --config configs/classification.yaml
+# 说明：在 default.yaml 基础上加大骨干与训练轮次，适合有较多真实数据时追求精度。
+experiment:
+  name: "tc_cls_resnet50"
+  seed: 42
+  output_dir: "outputs"
+  num_workers: 4
+
+data:
+  mode: "csv"
+  task: "classification"
+  root_dir: "data"
+  label_file: "data/labels.csv"
+  split: [0.7, 0.15, 0.15]
+  image_size: 224
+  class_names: ["TD", "TS", "STS", "TY", "STY", "SuperTY"]
+  mean: [0.485, 0.456, 0.406]
+  std: [0.229, 0.224, 0.225]
+
+augmentation:
+  train:
+    random_resized_crop: true
+    horizontal_flip: true
+    rotate: 20
+    color_jitter: [0.3, 0.3, 0.3, 0.0]
+    normalize: true
+  val:
+    resize: 256
+    center_crop: 224
+    normalize: true
+
+model:
+  backbone: "resnet50"
+  pretrained: true
+  freeze_backbone: false
+  dropout: 0.3
+  reg_hidden: 128
+
+train:
+  epochs: 80
+  batch_size: 32
+  optimizer: "adamw"
+  lr: 1.0e-4
+  weight_decay: 1.0e-2
+  scheduler: "step"
+  lr_step_size: 25
+  lr_gamma: 0.1
+  label_smoothing: 0.1
+  loss: "cross_entropy"
+  mixed_precision: true
+  grad_clip: 0.0
+  early_stopping_patience: 15
+  save_top_k: 3
+  log_every: 20
+
+device:
+  mode: "auto"
