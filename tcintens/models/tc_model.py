@@ -24,11 +24,15 @@ class TCIntensityModel(nn.Module):
         freeze_backbone: bool = False,
         dropout: float = 0.3,
         reg_hidden: int = 128,
+        in_channels: int = 3,
     ):
         super().__init__()
         self.backbone_name = backbone_name
         self.task = task
-        self.backbone, self.num_features = build_backbone(backbone_name, pretrained)
+        self.in_channels = in_channels
+        self.backbone, self.num_features = build_backbone(
+            backbone_name, pretrained, in_channels
+        )
 
         if freeze_backbone:
             for p in self.backbone.parameters():
@@ -68,5 +72,6 @@ def build_model(cfg) -> TCIntensityModel:
         freeze_backbone=m.get("freeze_backbone", False),
         dropout=m.get("dropout", 0.3),
         reg_hidden=m.get("reg_hidden", 128),
+        in_channels=m.get("in_channels", 3),
     )
     return model
