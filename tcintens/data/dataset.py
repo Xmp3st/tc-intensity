@@ -133,6 +133,11 @@ def create_datasets(cfg):
     from .transforms import build_transforms
 
     data_cfg = cfg.to_dict()["data"]
+    # TCIR 卫星图数据集走专用分支（多通道、自带标注、防泄漏切分）
+    if data_cfg.get("dataset", "image") == "tcir":
+        from .tcir import create_tcir_datasets
+        return create_tcir_datasets(cfg)
+
     aug_cfg = cfg.to_dict()["augmentation"]
     image_size = data_cfg["image_size"]
     mean = data_cfg["mean"]
