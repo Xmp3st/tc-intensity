@@ -6,5 +6,12 @@ numpy
 pillow
 pyyaml
 
+# TCIR 多通道卫星数据集所需
+h5py>=3.0          # 读取 HDF5 matrix
+pandas>=1.3        # 读取 info 标签表
+# 可选但推荐：用 pandas 官方方式读 info 表（pip install tables）；
+# 未安装时框架会回退到纯 h5py 解析，仍可读取标签。
+# tables>=3.7
+
 # 可选（非必需）：tensorboard 用于可视化训练曲线
 # tensorboard>=2.0

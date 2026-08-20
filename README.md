@@ -30,19 +30,26 @@ tc_intensity/
 ├── configs/                 # 配置（调参入口）
 │   ├── default.yaml         # 默认配置，最全注解
 │   ├── classification.yaml   # 预设：分类任务（resnet50）
-│   └── regression_wind.yaml  # 预设：回归风速任务
+│   ├── regression_wind.yaml  # 预设：回归风速任务
+│   └── tcir_regression.yaml  # 预设：TCIR 多通道卫星图风速回归
 ├── tcintens/               # 框架核心包
-│   ├── data/               # 数据集 + 数据增强
-│   ├── models/             # 可插拔骨干 + 强度预测头
+│   ├── data/               # 数据集 + 数据增强（含 tcir.py 加载器）
+│   ├── models/             # 可插拔骨干(支持多通道) + 强度预测头
 │   ├── engine/             # 训练 / 评估 / 推理
 │   └── utils/              # 配置 / 日志 / 指标 / 杂项
 ├── scripts/                # 数据工具
 │   ├── make_synthetic.py   # 生成合成数据（无真实数据也能跑通）
-│   └── prepare_data.py     # 把真实数据整理成 labels.csv
-├── tests/test_pipeline.py  # 端到端冒烟测试
+│   ├── prepare_data.py     # 把真实数据整理成 labels.csv
+│   ├── download_tcir.py    # 下载 TCIR 数据集（约 13GB）
+│   └── compute_tcir_stats.py  # 计算 TCIR 逐通道均值/标准差（归一化用）
+├── tests/
+│   ├── test_pipeline.py     # 通用框架冒烟测试
+│   └── test_tcir.py        # TCIR 加载器 + 多通道训练端到端测试
 ├── train.py / evaluate.py / predict.py   # 命令行入口
 ├── requirements.txt
-└── docs/github_upload.md   # GitHub 上传与仓库管理方案
+└── docs/
+    ├── github_upload.md     # GitHub 上传与仓库管理方案
+    └── tcir_training.md     # TCIR 数据集：加载/训练方法/标注说明
 ```
 
 ---
@@ -73,7 +80,24 @@ python train.py --set data.label_file=data/labels.csv
 
 ---
 
-## 4. 参数调节（核心特性）
+## 4. TCIR 官方卫星数据集（image-to-intensity 回归）
+
+TCIR（Chen, Chen & Lin, KDD 2018）是「卫星图 → 台风强度」回归的公开基准：4 通道卫星图
+（IR1/WV/VIS/PMW，201×201，含 NaN），标签为 best-track 风速/风圈/海压。
+
+- **是否需要标注：不需要。** 数据集已自带标签（来自 JTWC/HURDAT2 best-track），直接监督回归即可。
+- 加载与训练方法、坑点见 **[docs/tcir_training.md](docs/tcir_training.md)**。
+- 专属配置 `configs/tcir_regression.yaml`；下载脚本 `scripts/download_tcir.py`。
+
+```bash
+python scripts/download_tcir.py --out data/
+python train.py -c configs/tcir_regression.yaml \
+    --set data.tcir.h5_path=data/TCIR-ATLN_EPAC_WPAC.h5
+```
+
+---
+
+## 5. 参数调节（核心特性）
 
 **所有超参数都在 YAML 里**。改文件，或用命令行 `--set` 临时覆盖（类型自动推断）：
 
@@ -128,10 +152,11 @@ python train.py --print-config
 
 ```bash
 python tests/test_pipeline.py     # 生成合成数据并跑 2 个 epoch，断言指标优于随机
+python tests/test_tcir.py         # TCIR 加载器 + 多通道训练端到端（合成 HDF5，无需真实数据）
 ```
 
 ---
 
-## 7. 上传到 GitHub
+## 6. 上传到 GitHub
 
 仓库初始化、提交规范与远端推送步骤见 **[docs/github_upload.md](docs/github_upload.md)**。
