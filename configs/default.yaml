@@ -21,6 +21,7 @@ experiment:
 # -----------------------------------------------------------------------------
 data:
   mode: "csv"                     # csv | folder
+  dataset: "image"               # image | tcir（tcir=TCIR 多通道卫星图回归数据集）
   task: "classification"          # classification | regression
   root_dir: "data"                # 图片相对根目录（csv 模式下 image_path 可相对它解析）
   label_file: "data/labels.csv"   # csv 模式：标签文件
@@ -63,6 +64,7 @@ model:
   freeze_backbone: false          # true 时冻结骨干，只训头部（小数据集迁移学习）
   dropout: 0.3                    # 头部 dropout，防过拟合
   reg_hidden: 128                 # 回归头隐藏层维度（仅 regression 模式）
+  in_channels: 3                  # 输入通道：3=RGB/IR1+WV+PMW；设为 4 可包含 VIS
 
 # -----------------------------------------------------------------------------
 # 训练

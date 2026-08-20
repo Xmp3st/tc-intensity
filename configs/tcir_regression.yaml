@@ -1,0 +1,95 @@
+# =============================================================================
+# TCIR 风速回归专用配置（Hsuan-Tien Lin 的 Image-to-intensity Regression 数据集）
+# -----------------------------------------------------------------------------
+# 用法：
+#   python train.py -c configs/tcir_regression.yaml
+#   python train.py -c configs/tcir_regression.yaml --set model.backbone=resnet50
+# 数据需先下载（见 scripts/download_tcir.py 或 docs/tcir_training.md），
+# 并把 TCIR-*.h5 放到 data/ 下，h5_path 指向它。
+# =============================================================================
+
+experiment:
+  name: "tcir_regression"
+  seed: 42
+  output_dir: "outputs"
+  num_workers: 4
+
+# -----------------------------------------------------------------------------
+# 数据：dataset=tcir 启用 TCIR 分支
+#   root_dir + tcir.h5_path 决定文件路径
+#   tcir.channels       选择通道（VIS 白天极不稳定，默认弃用）
+#   tcir.target         intensity(主目标,knot) / size(nmi) / pres(hPa)
+#   tcir.label_unit     knots | ms（统一换算为 m/s 时设 ms）
+#   tcir.nan_mode       zero(置0) | interp(按行线性插值)
+#   tcir.split_strategy by_storm(按台风ID切分,防泄漏) | random
+#   tcir.regions        可选，只取某些区域，例如 [WPAC, EPAC]
+# -----------------------------------------------------------------------------
+data:
+  dataset: "tcir"
+  task: "regression"
+  root_dir: "data"
+  split: [0.7, 0.15, 0.15]
+  mean: [0.485, 0.456, 0.406]     # 占位（TCIR 多通道不用 ImageNet 归一化）
+  std:  [0.229, 0.224, 0.225]
+  tcir:
+    h5_path: "data/TCIR.h5"
+    channels: ["IR1", "WV", "PMW"]
+    target: "intensity"
+    label_unit: "knots"
+    nan_mode: "zero"
+    normalize: false               # 若已用 scripts/compute_tcir_stats 算出 mean/std 可开启
+    norm_mean: null
+    norm_std: null
+    resize: 128                    # 201->128 降低显存/算力（设为 null 用原始 201）
+    split_strategy: "by_storm"
+    storm_col: "id"
+    regions: null                  # 例如 ["WPAC","EPAC","ATL"] 只取北太平洋+大西洋
+
+# -----------------------------------------------------------------------------
+# 增强：TCIR 为张量输入，旋转/翻转作用在通道维张量上（台风无 canonical 朝向）
+# -----------------------------------------------------------------------------
+augmentation:
+  train:
+    random_resized_crop: false
+    horizontal_flip: true
+    rotate: 15
+    color_jitter: [0.0, 0.0, 0.0, 0.0]
+    normalize: false
+  val:
+    resize: 256
+    center_crop: 128
+    normalize: false
+
+# -----------------------------------------------------------------------------
+# 模型：多通道骨干（in_channels 自动适配 channels 数量）
+# -----------------------------------------------------------------------------
+model:
+  backbone: "resnet18"
+  pretrained: true
+  freeze_backbone: false
+  dropout: 0.3
+  reg_hidden: 128
+  in_channels: 3                  # 与 tcir.channels 长度一致
+
+# -----------------------------------------------------------------------------
+# 训练：回归任务默认 MSE；knot 量级较大，可用 huber 更稳
+# -----------------------------------------------------------------------------
+train:
+  epochs: 50
+  batch_size: 64
+  optimizer: "adamw"
+  lr: 1.0e-3
+  weight_decay: 1.0e-2
+  scheduler: "cosine"
+  lr_step_size: 10
+  lr_gamma: 0.1
+  label_smoothing: 0.0
+  loss: "mse"                     # mse | huber
+  mixed_precision: true
+  grad_clip: 0.0
+  early_stopping_patience: 10
+  save_top_k: 3
+  log_every: 20
+
+device:
+  mode: "auto"
