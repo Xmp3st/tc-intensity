@@ -157,6 +157,35 @@ python tests/test_tcir.py         # TCIR 加载器 + 多通道训练端到端（
 
 ---
 
-## 6. 上传到 GitHub
+## 7. TCIR 真实数据训练（WPAC 西北太平洋）
+
+数据集 [TCIR](https://www.csie.ntu.edu.tw/~htlin/program/TCIR/) 自带 best-track 强度标签（`Vmax`，单位 knot），**无需人工标注**。
+原始 h5 约 30GB，且 WSL 磁盘顺序读很慢；推荐先做「一次性抽取」生成紧凑本地文件，再训练（每轮只读 ~2GB）：
+
+```bash
+# 1) 把原始 h5 拷到本地 ext4（避免反复跨挂载盘读），或直接指向 /mnt/e 路径
+# 2) 抽取 WPAC 子集 -> (20059,96,96,3) 紧凑 h5 + 配套 csv + 归一化统计（一次性，约 20 分钟）
+python scripts/extract_wpac.py \
+    --h5 data/TCIR.h5 \
+    --csv data/wpac_info.csv \
+    --out-h5 data/wpac_96.h5 \
+    --out-csv data/wpac_compact.csv \
+    --channels IR1 WV PMW --resize 96 --start 27000
+
+# 3) 正式训练（resnet18，三通道，回归 Vmax）
+python train.py -c configs/tcir_wpac_train.yaml
+# 调参示例：
+python train.py -c configs/tcir_wpac_train.yaml --set model.backbone=resnet34 train.epochs=60
+```
+
+要点：
+- `wpac_info.csv` 的 `matrix_index` 指向 h5 帧、`Vmax` 为标签、`ID` 用于按风暴防泄漏切分（默认 70/15/15）。
+- 抽取脚本顺带算出逐通道 mean/std（基于 96×96 输入分布），已写入 `data_tcir_wpac_stats.json` 并填入训练配置。
+- 想扩到整个北太平洋：把 `data.tcir.regions` 设为 `["WPAC","EPAC"]`（需对应区域的 h5/CSV）。
+- 数据加载支持两种标签来源：`label_source=h5`（读 h5 的 info 表）或 `csv`（推荐，用你整理的 CSV）。
+
+---
+
+## 8. 上传到 GitHub
 
 仓库初始化、提交规范与远端推送步骤见 **[docs/github_upload.md](docs/github_upload.md)**。

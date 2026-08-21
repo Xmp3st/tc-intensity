@@ -1,0 +1,99 @@
+# =============================================================================
+# TCIR 北太平洋（WPAC 西北太平洋）强度回归 —— 正式训练配置
+# -----------------------------------------------------------------------------
+# 数据：原始 TCIR-ATLN_EPAC_WPAC.h5(30GB) 已抽取为紧凑本地文件
+#        data/wpac_96.h5      (20059,96,96,3)  IR1/WV/PMW 三通道、已下采样、NaN置0
+#        data/wpac_compact.csv  配套标签(Vmax)/风暴ID(ID)/区域，matrix_index 与 h5 行对齐
+#       均由 scripts/extract_wpac.py 一次性生成（顺带算出下方归一化统计）
+# 任务：卫星图(IR1/WV/PMW 三通道, 96x96) -> 最大持续风速 Vmax(knots) 回归
+# 无需人工标注：TCIR best-track 已自带强度标签
+#
+# 运行：
+#   python train.py -c configs/tcir_wpac_train.yaml
+#   python train.py -c configs/tcir_wpac_train.yaml --set train.epochs=60
+# =============================================================================
+
+experiment:
+  name: "tcir_wpac_v1"
+  seed: 42
+  output_dir: "outputs/tcir_wpac"
+  num_workers: 4
+
+# -----------------------------------------------------------------------------
+# 数据：dataset=tcir 走专用分支；label_source=csv 用 wpac_info.csv 驱动
+#   csv 提供：matrix_index(取图) / Vmax(标签) / ID(按风暴防泄漏切分)
+# -----------------------------------------------------------------------------
+data:
+  dataset: "tcir"
+  task: "regression"
+  root_dir: "."
+  split: [0.7, 0.15, 0.15]
+  mean: [0.485, 0.456, 0.406]     # 占位（多通道不用 ImageNet 归一化）
+  std:  [0.229, 0.224, 0.225]
+  tcir:
+    h5_path: "/home/yzm/tf/tc_intensity/data/wpac_96.h5"
+    csv_path: "/home/yzm/tf/tc_intensity/data/wpac_compact.csv"
+    label_source: "csv"           # 用 CSV 驱动（推荐，绕开 pandas-fixed 解析）
+    channels: ["IR1", "WV", "PMW"]   # 弃用白天不稳定的 VIS
+    target: "intensity"           # h5-info 模式用（csv 模式用 target_col）
+    target_col: "Vmax"            # 主目标：最大持续风速(knots)
+    label_unit: "knots"
+    index_col: "matrix_index"     # CSV 中指向 h5 帧序号的列
+    storm_col: "ID"               # 按风暴 ID 做防泄漏切分
+    region_col: "data_set"        # 区域列（CSV 已全部是 WPAC）
+    regions: null                 # 全用 CSV（已限 WPAC）；也可设 ["WPAC","EPAC"] 扩到北太平洋
+    nan_mode: "zero"              # NaN 已在抽取阶段置 0
+    normalize: true               # 用逐通道 mean/std（由 extract_wpac 统计得到）
+    norm_mean: [260.864, 232.83, 0.638]
+    norm_std:  [32.849, 15.389, 1.71]
+    resize: 96                    # 201->96，平衡细节与算力
+    split_strategy: "by_storm"
+
+# -----------------------------------------------------------------------------
+# 增强：台风无 canonical 朝向，旋转/翻转安全且有助于泛化
+# -----------------------------------------------------------------------------
+augmentation:
+  train:
+    random_resized_crop: false
+    horizontal_flip: true
+    rotate: 15
+    color_jitter: [0.0, 0.0, 0.0, 0.0]
+    normalize: false
+  val:
+    resize: 256
+    center_crop: 96
+    normalize: false
+
+# -----------------------------------------------------------------------------
+# 模型：resnet18 骨干，in_channels=3 适配三通道卫星图，回归头
+# -----------------------------------------------------------------------------
+model:
+  backbone: "resnet18"
+  pretrained: true
+  freeze_backbone: false
+  dropout: 0.3
+  reg_hidden: 64
+  in_channels: 3                  # 与 tcir.channels 长度一致
+
+# -----------------------------------------------------------------------------
+# 训练：回归默认 MSE；knot 量级较大，可用 huber 更稳
+# -----------------------------------------------------------------------------
+train:
+  epochs: 40
+  batch_size: 64
+  optimizer: "adamw"
+  lr: 1.0e-3
+  weight_decay: 1.0e-2
+  scheduler: "cosine"
+  lr_step_size: 10
+  lr_gamma: 0.1
+  label_smoothing: 0.0
+  loss: "mse"                     # mse | huber
+  mixed_precision: true           # RTX 5060 (cu128) 加速
+  grad_clip: 0.0
+  early_stopping_patience: 12     # 监控 val RMSE，12 轮不降则停
+  save_top_k: 3
+  log_every: 50
+
+device:
+  mode: "cuda"

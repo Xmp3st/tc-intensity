@@ -26,10 +26,20 @@ def main():
     ap.add_argument("--channels", nargs="+", default=["IR1", "WV", "PMW"])
     ap.add_argument("--sample-every", type=int, default=1,
                     help="每隔多少帧采样一次（大数据集可设大一点加速）")
+    ap.add_argument("--csv", default=None,
+                    help="仅统计该 CSV 中 index-col 指向的帧（如 wpac_info.csv 实现 WPAC 子集）")
+    ap.add_argument("--index-col", default="matrix_index")
     ap.add_argument("--out", default="data/tcir_stats.json")
     args = ap.parse_args()
 
-    mean, std = compute_tcir_stats(args.h5, tuple(args.channels), args.sample_every)
+    frame_indices = None
+    if args.csv:
+        import pandas as pd
+        df = pd.read_csv(args.csv)
+        frame_indices = df[args.index_col].to_numpy().astype(int)
+
+    mean, std = compute_tcir_stats(
+        args.h5, tuple(args.channels), args.sample_every, frame_indices=frame_indices)
     out = {"channels": list(args.channels), "mean": mean, "std": std}
     with open(args.out, "w", encoding="utf-8") as f:
         json.dump(out, f, indent=2)

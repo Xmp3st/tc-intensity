@@ -12,10 +12,9 @@ outputs/
 *.pt
 *.log
 
-# 数据（图片与标注通常很大，单独管理或用 Git LFS / 外部存储）
-data/synthetic/
-data/raw/
-data/processed/
+# 数据（图片、标注、大型 h5 通常很大，单独管理或用 Git LFS / 外部存储）
+# 注意：仅忽略仓库根目录的 data/（大型 h5），不要影响 tcintens/data/ 代码目录
+/data/
 *.png
 *.jpg
 *.jpeg

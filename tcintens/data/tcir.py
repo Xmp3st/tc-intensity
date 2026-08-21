@@ -58,6 +58,7 @@ class TCIRDataset(Dataset):
         resize: int = None,
         split: str = "train",
         aug: dict = None,
+        frame_labels=None,
     ):
         self.h5_path = h5_path
         self.channels = list(channels)
@@ -72,15 +73,21 @@ class TCIRDataset(Dataset):
         self.split = split
         self.aug = aug or {}
 
-        # 标签：直接从 info 表读取（数据集已自带标注，无需人工标注）
-        info = load_info(h5_path)
-        labels = info[target].astype(float).to_numpy()
-        if label_unit == "ms":
-            labels = labels * KNOT_TO_MS  # 原始为 knot
-        if indices is None:
-            indices = list(range(len(labels)))
+        # 标签：CSV 模式直接由 frame_labels 传入（与 indices 顺序对齐）；
+        #       否则从 h5 的 info 表读取（数据集自带标注，无需人工标注）。
+        if frame_labels is not None:
+            self.labels = np.asarray(frame_labels, dtype=np.float64)
+            if indices is None:
+                indices = list(range(len(self.labels)))
+        else:
+            info = load_info(h5_path)
+            labels = info[target].astype(float).to_numpy()
+            if label_unit == "ms":
+                labels = labels * KNOT_TO_MS  # 原始为 knot
+            if indices is None:
+                indices = list(range(len(labels)))
+            self.labels = labels[self.indices]
         self.indices = list(indices)
-        self.labels = labels[self.indices]
         self._hf = None  # 延迟打开，兼容多进程
 
     # ---- 多进程安全：每个 worker 重新打开 h5 ----
@@ -95,8 +102,13 @@ class TCIRDataset(Dataset):
     def __getitem__(self, idx):
         self._ensure_open()
         real_idx = self.indices[idx]
-        # matrix[real_idx] -> (201, 201, 4)
-        arr = self._matrix[real_idx][..., self.ch_idx]          # (H, W, C)
+        # matrix[real_idx] -> (H, W, C_h5)
+        raw = self._matrix[real_idx]
+        if raw.shape[-1] == len(self.channels):
+            # 预处理过的紧凑 h5 已是目标通道（如 3 通道），直接取
+            arr = raw[..., :len(self.channels)]
+        else:
+            arr = raw[..., self.ch_idx]                         # (H, W, C)
         arr = np.ascontiguousarray(arr.transpose(2, 0, 1)).astype(np.float32)  # (C, H, W)
 
         # 1) NaN 处理
@@ -154,11 +166,25 @@ def _read_info_h5py(h5_path: str):
         if "info" not in hf:
             raise KeyError(f"{h5_path} 中找不到 info 组")
         g = hf["info"]
-        # pandas fixed 布局：block0_values(2D) + block0_items(列名)
+        # pandas fixed 布局：block0(数值列) + block1(字符串列) + axis1(行索引)
         if "block0_values" in g:
-            cols = [_decode(c) for c in g["block0_items"][()]]
-            vals = g["block0_values"][()]
-            return pd.DataFrame(vals, columns=cols)
+            cols = [_decode(c) for c in np.atleast_1d(g["block0_items"][()])]
+            vals = np.atleast_2d(g["block0_values"][()])
+            df = pd.DataFrame(vals, columns=cols)
+            if "block1_items" in g:
+                scols = [_decode(c) for c in np.atleast_1d(g["block1_items"][()])]
+                svals = g["block1_values"][()]
+                try:
+                    if getattr(svals, "ndim", 0) == 2:
+                        for j, sc in enumerate(scols):
+                            df[sc] = svals[:, j]
+                    else:  # 单列字符串常存为 1D object 数组
+                        df[scols[0]] = np.array([_decode(v) for v in svals])
+                except Exception:
+                    pass
+            if "axis1" in g and len(g["axis1"]) == len(df):
+                df.index = g["axis1"][()]
+            return df
         # pandas table 布局：每个列是一个 dataset
         cols = {}
         for k in g.keys():
@@ -204,8 +230,44 @@ def _fill_nan_interp(arr: np.ndarray) -> np.ndarray:
 # --------------------------------------------------------------------------- #
 # 切分 + 数据集构造（接入框架的 create_datasets）
 # --------------------------------------------------------------------------- #
+def _split_by_storm(indices, labels, storm_ids, ratios, seed):
+    """按风暴 ID 分组切分 train/val/test（防泄漏）。
+
+    返回 (tr_i, tr_l, va_i, va_l, te_i, te_l)，其中 *i 为 frame 序号、
+    *l 为对应标签，三者顺序一致。
+    """
+    rng = random.Random(seed)
+    groups = {}
+    for j, sid in enumerate(storm_ids):
+        groups.setdefault(sid, []).append(j)
+    keys = list(groups.keys())
+    rng.shuffle(keys)
+    r_tr, r_va = ratios[0], ratios[1]
+    tr_i, tr_l, va_i, va_l, te_i, te_l = [], [], [], [], [], []
+    total = len(keys)
+    used = 0
+    for k in keys:
+        used += 1
+        frac = used / total
+        js = groups[k]
+        if frac <= r_tr:
+            tr_i += [indices[j] for j in js]; tr_l += [labels[j] for j in js]
+        elif frac <= r_tr + r_va:
+            va_i += [indices[j] for j in js]; va_l += [labels[j] for j in js]
+        else:
+            te_i += [indices[j] for j in js]; te_l += [labels[j] for j in js]
+    return tr_i, tr_l, va_i, va_l, te_i, te_l
+
+
 def create_tcir_datasets(cfg):
-    """按配置构建 train/val/test，返回 (dict, meta)。"""
+    """按配置构建 train/val/test，返回 (dict, meta)。
+
+    两种标签来源：
+      label_source=h5  : 从 h5 的 info 表读标签（需 pytables 或 h5py 回退）
+      label_source=csv : 从 csv_path 读标签（推荐，配合用户整理的 wpac_info.csv）
+                         —— 用 index_col 定位 h5 帧，target_col 取强度，
+                            storm_col 做按风暴防泄漏切分
+    """
     d = cfg.to_dict()["data"]
     tcfg = d.get("tcir", {})
     h5_path = tcfg.get("h5_path", "data/TCIR.h5")
@@ -227,72 +289,113 @@ def create_tcir_datasets(cfg):
     ratios = d.get("split", [0.7, 0.15, 0.15])
     seed = cfg.get("experiment.seed", 42)
     regions = tcfg.get("regions", None)          # 可选：只取某些区域
-    storm_col = tcfg.get("storm_col", "id")      # 按风暴 ID 切分防泄漏
+    storm_col = tcfg.get("storm_col", "ID")      # 按风暴 ID 切分防泄漏
     split_strategy = tcfg.get("split_strategy", "by_storm")
 
-    info = load_info(h5_path)
-    n = len(info)
-    if regions:
-        mask = info["region"].isin(regions).to_numpy()
-        keep = np.where(mask)[0]
-    else:
-        keep = np.arange(n)
-
-    # 训练集增强配置
     aug = cfg.to_dict().get("augmentation", {}).get("train", {})
-
-    if split_strategy == "by_storm" and storm_col in info.columns:
-        storm_ids = info[storm_col].to_numpy()[keep]
-        rng = random.Random(seed)
-        groups = {}
-        for i, sid in zip(keep, storm_ids):
-            groups.setdefault(sid, []).append(i)
-        keys = list(groups.keys())
-        rng.shuffle(keys)
-        train, val, test = [], [], []
-        r_tr, r_va = ratios[0], ratios[1]
-        used = 0
-        total = len(keys)
-        for k in keys:
-            used += 1
-            frac = used / total
-            if frac <= r_tr:
-                train += groups[k]
-            elif frac <= r_tr + r_va:
-                val += groups[k]
-            else:
-                test += groups[k]
-    else:
-        # 随机切分（fallback）
-        rng = random.Random(seed)
-        idx_all = list(keep)
-        rng.shuffle(idx_all)
-        n_tr = int(round(len(idx_all) * ratios[0]))
-        n_va = int(round(len(idx_all) * ratios[1]))
-        train = idx_all[:n_tr]
-        val = idx_all[n_tr:n_tr + n_va]
-        test = idx_all[n_tr + n_va:]
-
     common = dict(
         h5_path=h5_path, channels=channels, target=target, label_unit=label_unit,
         nan_mode=nan_mode, normalize=normalize, norm_mean=norm_mean,
         norm_std=norm_std, resize=resize,
     )
-    datasets = {
-        "train": TCIRDataset(indices=train, split="train", aug=aug, **common),
-        "val": TCIRDataset(indices=val, split="val", **common),
-        "test": TCIRDataset(indices=test, split="test", **common),
-    }
+
+    # --------------------------- CSV 驱动模式（推荐） ---------------------------
+    csv_path = tcfg.get("csv_path", None)
+    if csv_path and tcfg.get("label_source", "h5") == "csv":
+        df = pd.read_csv(csv_path)
+        idx_col = tcfg.get("index_col", "matrix_index")
+        id_col = storm_col
+        target_col = tcfg.get("target_col", "Vmax")
+        if regions:
+            rcol = tcfg.get("region_col", "data_set")
+            df = df[df[rcol].isin(regions)].reset_index(drop=True)
+        frame_indices = df[idx_col].to_numpy().astype(int)
+        labels = df[target_col].astype(float).to_numpy()
+        if label_unit == "ms":
+            labels = labels * KNOT_TO_MS
+        storm_ids = df[id_col].to_numpy()
+
+        if split_strategy == "by_storm":
+            tr_i, tr_l, va_i, va_l, te_i, te_l = _split_by_storm(
+                frame_indices, labels, storm_ids, ratios, seed)
+        else:
+            rng = random.Random(seed)
+            perm = list(range(len(frame_indices)))
+            rng.shuffle(perm)
+            n = len(perm)
+            n_tr = int(round(n * ratios[0]))
+            n_va = int(round(n * ratios[1]))
+            tr_i = [frame_indices[j] for j in perm[:n_tr]]; tr_l = [labels[j] for j in perm[:n_tr]]
+            va_i = [frame_indices[j] for j in perm[n_tr:n_tr + n_va]]; va_l = [labels[j] for j in perm[n_tr:n_tr + n_va]]
+            te_i = [frame_indices[j] for j in perm[n_tr + n_va:]]; te_l = [labels[j] for j in perm[n_tr + n_va:]]
+
+        datasets = {
+            "train": TCIRDataset(indices=tr_i, frame_labels=tr_l, split="train", aug=aug, **common),
+            "val":   TCIRDataset(indices=va_i, frame_labels=va_l, split="val", **common),
+            "test":  TCIRDataset(indices=te_i, frame_labels=te_l, split="test", **common),
+        }
+        meta_t = target_col
+        n_tr, n_va, n_te = len(tr_i), len(va_i), len(te_i)
+    else:
+        # ---------------------- 原始 h5-info 模式（需 pytables 或 h5py 回退） ----------------------
+        info = load_info(h5_path)
+        n = len(info)
+        if regions:
+            mask = info["region"].isin(regions).to_numpy()
+            keep = np.where(mask)[0]
+        else:
+            keep = np.arange(n)
+
+        if split_strategy == "by_storm" and storm_col in info.columns:
+            storm_ids = info[storm_col].to_numpy()[keep]
+            rng = random.Random(seed)
+            groups = {}
+            for i, sid in zip(keep, storm_ids):
+                groups.setdefault(sid, []).append(i)
+            keys = list(groups.keys())
+            rng.shuffle(keys)
+            train, val, test = [], [], []
+            r_tr, r_va = ratios[0], ratios[1]
+            used = 0
+            total = len(keys)
+            for k in keys:
+                used += 1
+                frac = used / total
+                if frac <= r_tr:
+                    train += groups[k]
+                elif frac <= r_tr + r_va:
+                    val += groups[k]
+                else:
+                    test += groups[k]
+        else:
+            rng = random.Random(seed)
+            idx_all = list(keep)
+            rng.shuffle(idx_all)
+            n_tr2 = int(round(len(idx_all) * ratios[0]))
+            n_va2 = int(round(len(idx_all) * ratios[1]))
+            train = idx_all[:n_tr2]
+            val = idx_all[n_tr2:n_tr2 + n_va2]
+            test = idx_all[n_tr2 + n_va2:]
+
+        datasets = {
+            "train": TCIRDataset(indices=train, split="train", aug=aug, **common),
+            "val": TCIRDataset(indices=val, split="val", **common),
+            "test": TCIRDataset(indices=test, split="test", **common),
+        }
+        meta_t = target
+        n_tr, n_va, n_te = len(train), len(val), len(test)
+
     meta = {
         "task": "regression",
         "class_names": [],
         "num_classes": 1,
         "in_channels": len(channels),
-        "target": target,
+        "target": meta_t,
         "label_unit": label_unit,
-        "n_train": len(train),
-        "n_val": len(val),
-        "n_test": len(test),
+        "n_train": n_tr,
+        "n_val": n_va,
+        "n_test": n_te,
+        "label_source": "csv" if (csv_path and tcfg.get("label_source", "h5") == "csv") else "h5",
     }
     return datasets, meta
 
@@ -300,21 +403,41 @@ def create_tcir_datasets(cfg):
 # --------------------------------------------------------------------------- #
 # 逐通道统计（可选：用于归一化的 mean/std 计算）
 # --------------------------------------------------------------------------- #
-def compute_tcir_stats(h5_path, channels=("IR1", "WV", "PMW"), sample_every=1):
-    """遍历 matrix 计算逐通道均值/标准差，返回 (mean, std) 列表。"""
+def compute_tcir_stats(h5_path, channels=("IR1", "WV", "PMW"), sample_every=1,
+                       frame_indices=None, batch=2000):
+    """遍历 matrix 计算逐通道均值/标准差，返回 (mean, std) 列表。
+
+    frame_indices : 只统计这些帧（如 WPAC 子集，可由 CSV 的 matrix_index 给出）。
+                    注意：非连续索引会触发逐帧读取，在挂载盘（如 WSL DrvFS）上极慢，
+                    仅对子集统计时使用。
+    batch         : 批量大小。frame_indices 为 None 时按【连续分块】(单次 hyperslab)
+                    读取，远快于逐帧/乱序读取，适合在挂载盘上做全量统计。
+    """
     ch_idx = [CHANNELS.index(c) for c in channels]
     sums = np.zeros(len(ch_idx), dtype=np.float64)
     sqs = np.zeros(len(ch_idx), dtype=np.float64)
     counts = np.zeros(len(ch_idx), dtype=np.int64)
     with h5py.File(h5_path, "r") as hf:
         mat = hf["matrix"]
-        n = mat.shape[0]
-        for i in range(0, n, sample_every):
-            x = mat[i][..., ch_idx].astype(np.float64)   # (H, W, C)
-            x = np.nan_to_num(x, nan=0.0)
-            sums += x.sum(axis=(0, 1))
-            sqs += (x ** 2).sum(axis=(0, 1))
-            counts += x.shape[0] * x.shape[1]
+        N = mat.shape[0]
+        if frame_indices is None:
+            # 全量统计：连续分块读取（单次 hyperslab，避免海量随机读）
+            step = max(1, batch) * sample_every
+            for s in range(0, N, step):
+                e = min(s + step, N)
+                x = mat[s:e][..., ch_idx].astype(np.float64)   # (B, H, W, C)
+                x = np.nan_to_num(x, nan=0.0)
+                sums += x.sum(axis=(0, 1, 2))
+                sqs += (x ** 2).sum(axis=(0, 1, 2))
+                counts += x.shape[0] * x.shape[1] * x.shape[2]
+        else:
+            for s in range(0, len(frame_indices), batch):
+                idx = frame_indices[s:s + batch]
+                x = mat[idx][..., ch_idx].astype(np.float64)
+                x = np.nan_to_num(x, nan=0.0)
+                sums += x.sum(axis=(0, 1, 2))
+                sqs += (x ** 2).sum(axis=(0, 1, 2))
+                counts += x.shape[0] * x.shape[1] * x.shape[2]
     mean = sums / counts
     var = sqs / counts - mean ** 2
     std = np.sqrt(np.clip(var, 1e-12, None))
