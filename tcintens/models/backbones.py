@@ -7,6 +7,7 @@ backbones.py —— 可插拔骨干网络（来自 torchvision）
   efficientnet_b0 / efficientnet_b1
   mobilenet_v3_small
   vit_b_16
+  vgg16
 
 每个 build_backbone 返回 (backbone, num_features)：
   backbone 已去掉原始分类头，输出「特征向量」；
@@ -32,6 +33,7 @@ _WEIGHTS = {
     "efficientnet_b1": models.EfficientNet_B1_Weights.DEFAULT,
     "mobilenet_v3_small": models.MobileNet_V3_Small_Weights.DEFAULT,
     "vit_b_16": models.ViT_B_16_Weights.DEFAULT,
+    "vgg16": models.VGG16_Weights.DEFAULT,
 }
 
 _BUILDERS = {
@@ -43,6 +45,7 @@ _BUILDERS = {
     "efficientnet_b1": models.efficientnet_b1,
     "mobilenet_v3_small": models.mobilenet_v3_small,
     "vit_b_16": models.vit_b_16,
+    "vgg16": models.vgg16,
 }
 
 
@@ -101,6 +104,16 @@ def build_backbone(name: str, pretrained: bool = True, in_channels: int = 3):
     elif name.startswith("vit_b_16"):
         num_features = model.heads.head.in_features
         model.heads = nn.Identity()
+    elif name.startswith("vgg"):
+        # torchvision VGG.forward: features -> avgpool(7x7) -> flatten -> classifier
+        # 将 classifier 置为 Identity 后，forward 直接返回扁平化特征 (B, 512*7*7)
+        # 多通道时须先替换首层卷积，否则下面的 dummy forward 会因通道数不符而报错
+        if in_channels != 3:
+            _replace_first_conv(model, in_channels, pretrained)
+        model.classifier = nn.Identity()
+        with torch.no_grad():
+            dummy = torch.zeros(1, in_channels, 32, 32)
+            num_features = model(dummy).shape[1]
     else:
         raise ValueError(f"未知 backbone 结构: {name}")
 
