@@ -4,7 +4,9 @@
 # 数据：原始 TCIR-ATLN_EPAC_WPAC.h5(30GB) 已抽取为紧凑本地文件
 #        data/wpac_96.h5      (20059,96,96,3)  IR1/WV/PMW 三通道、已下采样、NaN置0
 #        data/wpac_compact.csv  配套标签(Vmax)/风暴ID(ID)/区域，matrix_index 与 h5 行对齐
-#       均由 scripts/extract_wpac.py 一次性生成（顺带算出下方归一化统计）
+#       均由 scripts/extract_wpac.py 一次性生成（顺带算出下方归一化统计）。
+#       ⚠️ 注意：data/wpac_compact.csv 的 matrix_index 列为「紧凑 h5 行号(0-based 顺序)」，
+#          与原始 30GB h5 的帧号不同；predict.py --indices 与误差分析里的 matrix_index 均指该紧凑行号。
 # 任务：卫星图(IR1/WV/PMW 三通道, 96x96) -> 最大持续风速 Vmax(knots) 回归
 # 无需人工标注：TCIR best-track 已自带强度标签
 #
@@ -31,8 +33,8 @@ data:
   mean: [0.485, 0.456, 0.406]     # 占位（多通道不用 ImageNet 归一化）
   std:  [0.229, 0.224, 0.225]
   tcir:
-    h5_path: "/home/yzm/tf/tc_intensity/data/wpac_96.h5"
-    csv_path: "/home/yzm/tf/tc_intensity/data/wpac_compact.csv"
+    h5_path: "data/wpac_96.h5"          # 相对项目根；跨机器只需保证 data/ 下有该文件
+    csv_path: "data/wpac_compact.csv"   # 配套标签（Vmax/ID/data_set），行序与 h5 对齐
     label_source: "csv"           # 用 CSV 驱动（推荐，绕开 pandas-fixed 解析）
     channels: ["IR1", "WV", "PMW"]   # 弃用白天不稳定的 VIS
     target: "intensity"           # h5-info 模式用（csv 模式用 target_col）
@@ -65,10 +67,10 @@ augmentation:
     normalize: false
 
 # -----------------------------------------------------------------------------
-# 模型：resnet18 骨干，in_channels=3 适配三通道卫星图，回归头
+# 模型：vgg16 骨干，in_channels=3 适配三通道卫星图，回归头
 # -----------------------------------------------------------------------------
 model:
-  backbone: "resnet18"
+  backbone: "vgg16"
   pretrained: true
   freeze_backbone: false
   dropout: 0.3

@@ -10,12 +10,12 @@ scripts/visualize_test.py —— 测试集预测可视化报告
   (3) Pred vs True 散点图（含 y=x 参考线）
 
 用法:
-  # 默认用已训练的 resnet18 (tcir_wpac_v1)
+  # 默认（config 即 vgg16，对应 outputs/tcir_wpac/tcir_wpac_v1 权重）
   python scripts/visualize_test.py -c configs/tcir_wpac_train.yaml
 
-  # VGG16 训完之后
+  # 若用 train.sh 训了其它实验目录（如 tcir_wpac_vgg16）
   python scripts/visualize_test.py -c configs/tcir_wpac_train.yaml \
-      --set model.backbone=vgg16 experiment.name=tcir_wpac_vgg16
+      --set experiment.name=tcir_wpac_vgg16
 
 输出: outputs/<experiment.name>/visualization.png
 """

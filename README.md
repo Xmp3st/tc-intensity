@@ -66,14 +66,14 @@ tc_intensity/
 想直接跑通当前 WPAC 主线，只需三步（数据已抽取好，无需碰 30GB 原文件）：
 
 ```bash
-cd /home/yzm/tf/tc_intensity
+cd /home/yzm/tf/tc_intensity      # 进入项目根（换成你机器上的项目目录）
 
 ./train.sh                          # 训练 VGG16（自动用 dl_env 的 python）
 
-python evaluate.py -c configs/tcir_wpac_train.yaml --set model.backbone=vgg16   # 测试集指标
+python evaluate.py -c configs/tcir_wpac_train.yaml        # 测试集指标
 
 python predict.py --h5 data/wpac_96.h5 --indices 10260 \
-    -c configs/tcir_wpac_train.yaml --set model.backbone=vgg16                  # 单样本推理
+    -c configs/tcir_wpac_train.yaml                  # 单样本推理
 ```
 
 更完整的命令与说明见 **[QUICKSTART.md](QUICKSTART.md)**。
@@ -110,9 +110,15 @@ data_tcir_wpac_stats.json# 逐通道 mean/std
 
 ### 4.1 数据抽取（一次性，已有则跳过）
 
-原始 h5 约 30GB 且 WSL 跨挂载盘读很慢，先抽取为紧凑本地文件：
+原始 h5 约 30GB 且 WSL 跨挂载盘读很慢，先抽取为紧凑本地文件。**本项目数据已抽取好，通常无需重跑**。
 
 ```bash
+# 1) 准备输入（二选一）：
+#    a) 把原始文件拷到 data/：
+#       cp "/mnt/e/TCIR-ATLN_EPAC_WPAC.h5/TCIR-ATLN_EPAC_WPAC.h5" data/TCIR.h5
+#    b) 或直接把 --h5 指向原始文件绝对/相对路径
+#    data/wpac_info.csv 是随原始数据提供的「info+matrix 整理表」
+#    （列：matrix_index[原始帧号], Vmax, ID, data_set），作为抽取脚本的输入
 python scripts/extract_wpac.py \
     --h5 data/TCIR.h5 \
     --csv data/wpac_info.csv \
@@ -121,6 +127,9 @@ python scripts/extract_wpac.py \
     --channels IR1 WV PMW --resize 96 --start 27000 \
     --stats-out data_tcir_wpac_stats.json
 ```
+> 说明：`--start 27000` 是加速项——原始 matrix 前段是 ATL/EPAC 等无关帧，WPAC 帧的原始
+> `matrix_index` 约从 27322 起，从 27000 开始读即可跳过前部；脚本仍按 `wpac_info.csv` 的行严格筛选，
+> 不会误包含非 WPAC 帧。输出 `wpac_compact.csv` 的 `matrix_index` 改为**紧凑行号**（见上方路径约定）。
 
 ---
 
@@ -140,13 +149,13 @@ python scripts/extract_wpac.py \
 ### 5.2 直接入口
 
 ```bash
-python train.py -c configs/tcir_wpac_train.yaml --set model.backbone=vgg16
+python train.py -c configs/tcir_wpac_train.yaml          # 用 config 默认（vgg16）
 
 # 调参（不改文件，命令行覆盖）
-python train.py -c configs/tcir_wpac_train.yaml --set model.backbone=vgg16 train.epochs=60 train.lr=2e-4
+python train.py -c configs/tcir_wpac_train.yaml --set train.epochs=60 train.lr=2e-4
 ```
 
-输出进入 `outputs/tcir_wpac_<骨干名>/`（自动存 `best.ckpt`、训练日志、`config_used.yaml`）。
+输出默认进入 `outputs/tcir_wpac/tcir_wpac_v1/`（VGG16，config 默认实验名，自动存 `best.ckpt`、训练日志、`config_used.yaml`）；换其他骨干（如 `train.sh resnet18`）则进入 `outputs/tcir_wpac/tcir_wpac_<骨干名>/`，互相隔离不覆盖。
 
 ---
 
@@ -155,12 +164,13 @@ python train.py -c configs/tcir_wpac_train.yaml --set model.backbone=vgg16 train
 ### 6.1 正式测试集指标（2913 样本）
 
 ```bash
-python evaluate.py -c configs/tcir_wpac_train.yaml --set model.backbone=vgg16
+python evaluate.py -c configs/tcir_wpac_train.yaml
 ```
 
-> ⚠️ **关键坑**：`evaluate.py` 必须带 `-c 训练配置`。只传 `--set experiment.name=xxx` 会退回
-> `default.yaml` 的数据配置，导致加载错误数据。`tcir_wpac_train.yaml` 里 `model.backbone` 仍为
-> `resnet18`，而当前 `tcir_wpac_v1` 目录下实际是 **VGG16** 权重，**务必补 `--set model.backbone=vgg16`**。
+> ⚠️ `evaluate.py` **必须带 `-c 训练配置`**；只传 `--set experiment.name=xxx` 会退回 `default.yaml`
+> 的数据配置，导致加载错误数据（这是早期踩过的坑，已固化进框架）。
+> 当前 `configs/tcir_wpac_train.yaml` 默认 `model.backbone=vgg16`、实验名 `tcir_wpac_v1`，
+> 与 `outputs/tcir_wpac/tcir_wpac_v1/checkpoints/best.ckpt`（VGG16 权重）一致，直接运行即可。
 > 指标写入 `outputs/tcir_wpac/tcir_wpac_v1/test_metrics.json`。
 
 **当前 VGG16 测试集指标（N=2913）**：RMSE = 16.22 kn · MAE = 11.93 kn · R² = 0.7613。
@@ -168,7 +178,7 @@ python evaluate.py -c configs/tcir_wpac_train.yaml --set model.backbone=vgg16
 ### 6.2 误差最大样本 + 逐样本预测
 
 ```bash
-python scripts/error_analysis.py -c configs/tcir_wpac_train.yaml --set model.backbone=vgg16
+python scripts/error_analysis.py -c configs/tcir_wpac_train.yaml
 ```
 
 输出（写入 experiment 目录）：
@@ -180,7 +190,7 @@ python scripts/error_analysis.py -c configs/tcir_wpac_train.yaml --set model.bac
 ### 6.3 测试集可视化
 
 ```bash
-python scripts/visualize_test.py -c configs/tcir_wpac_train.yaml --set model.backbone=vgg16
+python scripts/visualize_test.py -c configs/tcir_wpac_train.yaml
 # 可选：--samples 16 --scatter-n 2913 --out outputs/my_viz.png
 ```
 
@@ -195,16 +205,15 @@ python scripts/visualize_test.py -c configs/tcir_wpac_train.yaml --set model.bac
 resize），以及对紧凑 h5 按帧号直接推理；输出 **knots**（并换算 m/s）。
 
 ```bash
-# 单张 .npy（H,W,C，通道顺序同配置）
-python predict.py --image frame.npy -c configs/tcir_wpac_train.yaml --set model.backbone=vgg16
+# 单张 .npy（H,W,C，通道顺序同配置 IR1/WV/PMW）
+python predict.py --image frame.npy -c configs/tcir_wpac_train.yaml
 
 # 文件夹批量 → CSV
-python predict.py --folder ./frames/ -c configs/tcir_wpac_train.yaml \
-    --set model.backbone=vgg16 --out preds.csv
+python predict.py --folder ./frames/ -c configs/tcir_wpac_train.yaml --out preds.csv
 
-# 直接对紧凑 h5 按帧号推理（无需先导出 .npy）
+# 直接对紧凑 h5 按「紧凑行号」推理（无需先导出 .npy）
 python predict.py --h5 data/wpac_96.h5 --indices 10260,9603 \
-    -c configs/tcir_wpac_train.yaml --set model.backbone=vgg16 --out preds.csv
+    -c configs/tcir_wpac_train.yaml --out preds.csv
 ```
 
 > 验证：对 `matrix[10260]` 推理得到 53.70 kn，与测试集评估完全一致。
@@ -216,7 +225,7 @@ python predict.py --h5 data/wpac_96.h5 --indices 10260,9603 \
 **所有超参数都在 YAML 里**。改文件，或用命令行 `--set` 临时覆盖（类型自动推断）：
 
 ```bash
-python train.py -c configs/tcir_wpac_train.yaml --set model.backbone=vgg16 train.epochs=60 train.lr=1e-4
+python train.py -c configs/tcir_wpac_train.yaml --set train.epochs=60 train.lr=1e-4
 python train.py -c configs/tcir_wpac_train.yaml --set model.freeze_backbone=true   # 小数据迁移
 python train.py --print-config          # 仅打印最终生效配置，不训练
 ```
@@ -274,9 +283,11 @@ python tests/test_tcir.py         # TCIR 加载器 + 多通道训练端到端（
 ## 12. 常见问题（FAQ）
 
 **Q：`evaluate.py` / `predict.py` 报 `KeyError` 或模型加载失败？**
-A：几乎都是「骨干不匹配」。当前 `tcir_wpac_v1` 实际是 **VGG16** 权重，而配置里
-`model.backbone` 仍是 `resnet18`。所有用到该权重的命令都要补 `--set model.backbone=vgg16`。
-下次建议用 `train.sh` 自动命名（`tcir_wpac_vgg16` / `tcir_wpac_resnet18`）避免互相覆盖。
+A：最常见是「骨干不匹配」或「实验目录不对」。当前 `configs/tcir_wpac_train.yaml`
+默认 `model.backbone=vgg16`，对应 `outputs/tcir_wpac/tcir_wpac_v1/checkpoints/best.ckpt`（VGG16 权重），
+直接用 `-c configs/tcir_wpac_train.yaml` 即可。若你用 `train.sh resnet18` 训了新骨干，权重在
+`outputs/tcir_wpac_resnet18/tcir_wpac_resnet18/`，需用 `-c` 同配置并 `--set model.backbone=resnet18`、
+`experiment.name=tcir_wpac_resnet18` `experiment.output_dir=outputs/tcir_wpac_resnet18` 指向它。
 
 **Q：想用 4 通道（含 VIS）？**
 A：训练时 `--set model.in_channels=4 data.tcir.channels=["IR1","WV","VIS","PMW"]`，
@@ -284,3 +295,24 @@ A：训练时 `--set model.in_channels=4 data.tcir.channels=["IR1","WV","VIS","P
 
 **Q：强台风被严重低估？**
 A：属回归向均值回归。可尝试对 Vmax 做 log 变换、分段/分位数损失，或高强段数据增广。
+
+---
+
+## 13. 术语表（专业名词解释）
+
+| 术语 | 解释 |
+|---|---|
+| **TCIR** | *Dataset of Tropical Cyclone for Image-to-intensity Regression*（Chen, Chen & Lin, KDD 2018）：卫星图→台风强度的公开基准数据集，自带标签、无需人工标注。 |
+| **WPAC / EPAC / ATL / SH** | 洋区缩写：西北太平洋 / 东太平洋 / 大西洋 / 南半球。本项目主线用 WPAC。 |
+| **IR1 / WV / VIS / PMW** | 卫星通道：红外 1 / 水汽 / 可见光 / 被动微波。VIS 夜间缺失、白天不稳定，默认弃用；本项目用 IR1+WV+PMW 三通道。 |
+| **Vmax** | 最大持续风速（Maximum Sustained Wind），本项目回归目标，单位 **knot**（节）。 |
+| **knot / kn** | 节（海里/小时），航海与气象风速单位；1 kn ≈ 0.514 m/s。 |
+| **best-track** | 事后由 JTWC/HURDAT2 等机构定出的「准真值」强度序列，含标注噪声（约 10 kn），被当作监督标签。 |
+| **by_storm 防泄漏切分** | 按「风暴 ID」而非随机按「帧」切分 train/val/test，确保同一台风的连续帧只进一个集合，避免测试集偷看训练集、指标虚高。 |
+| **归一化（逐通道 mean/std）** | 对每个通道用其均值/标准差标准化，使量纲一致；本项目用 TCIR 各通道统计，而非 ImageNet 的均值。 |
+| **伪 RGB / 合成图** | 把多通道（IR1→R、WV→G、PMW→B）逐通道拉伸后拼成的可视化彩色图，仅用于展示，不参与训练。 |
+| **混合精度 / AMP** | Automatic Mixed Precision：计算用 float16、关键累加用 float32，省显存、提速，精度几乎不掉。 |
+| **RMSE / MAE / R²** | 回归指标：均方根误差 / 平均绝对误差 / 决定系数（越接近 1 越好）。 |
+| **HDF5** | 一种支持超大数组的分层二进制格式（`.h5`），TCIR 用它存 matrix(N×201×201×4) 与 info 表。 |
+| **dropout / 预训练骨干 / 早停 / Top-K / huber** | 训练组件：随机置零防过拟合 / 用 ImageNet 等预训练权重初始化 / 验证集不降则停 / 保留最优 K 个权重 / 对离群更稳健的损失。 |
+| **回归向均值回归** | 模型在极端值（如强台风）上系统性偏向中间值的现象，是本项目强台风被低估的根因。 |

@@ -3,7 +3,7 @@
 error_analysis.py —— 在完整测试集上评估 + 列出预测误差最大的样本
 
 用法（与本框架一致，必须带上训练配置与正确的 backbone）：
-    python scripts/error_analysis.py -c configs/tcir_wpac_train.yaml --set model.backbone=vgg16
+    python scripts/error_analysis.py -c configs/tcir_wpac_train.yaml
 
 输出（写入 experiment 目录，如 outputs/tcir_wpac/tcir_wpac_v1/）：
     test_predictions.csv : 逐样本 真实/预测/误差

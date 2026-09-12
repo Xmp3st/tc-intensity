@@ -2,7 +2,7 @@
 """engine/predict.py —— TCIR 适配的推理入口
 
 支持三种输入：
-  1) 单张 .npy:      python predict.py --image frame.npy -c configs/tcir_wpac_train.yaml --set model.backbone=vgg16
+  1) 单张 .npy:      python predict.py --image frame.npy -c configs/tcir_wpac_train.yaml
   2) 文件夹 .npy:    python predict.py --folder ./frames/ -c ... --out preds.csv
   3) 从 TCIR h5 取帧: python predict.py --h5 data/wpac_96.h5 --indices 10260,9603 -c ... --out preds.csv
 

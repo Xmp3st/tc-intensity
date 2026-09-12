@@ -19,11 +19,12 @@
 
 ## 2. 初始化本地仓库并规划提交
 
-采用 **Conventional Commits** 风格，按功能拆分提交，便于 review 与回滚：
+采用 **Conventional Commits** 风格，按功能拆分提交，便于 review 与回滚。
+> 本仓库已完成 `git init` 与首轮提交；下面是从零开始的参考步骤（已初始化可跳过 `git init`）。
 
 ```bash
-cd /home/yzm/tf/tc_intensity
-git init
+cd /home/yzm/tf/tc_intensity      # 进入项目根（换成你的项目目录）
+git init                           # 仅首次需要
 git add .gitignore .gitattributes requirements.txt README.md
 git commit -m "chore: 初始化项目骨架与依赖说明"
 

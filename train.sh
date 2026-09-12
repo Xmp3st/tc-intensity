@@ -26,8 +26,15 @@ EPOCHS="${2:-40}"                 # 默认 40 轮
 EXTRA_OVERRIDES=("${@:3}")       # 其余参数原样传给 --set
 
 # 按骨干自动命名, 避免不同实验互相覆盖
-EXP_NAME="tcir_wpac_${BACKBONE}"
-OUTPUT_DIR="outputs/tcir_wpac_${BACKBONE}"
+# 默认 vgg16 沿用 config 默认实验名 tcir_wpac_v1, 与现有 VGG16 权重目录一致;
+# 其余骨干则隔离到 tcir_wpac_<骨干>, 避免覆盖默认权重。
+if [ "$BACKBONE" = "vgg16" ]; then
+    EXP_NAME="tcir_wpac_v1"
+    OUTPUT_DIR="outputs/tcir_wpac"
+else
+    EXP_NAME="tcir_wpac_${BACKBONE}"
+    OUTPUT_DIR="outputs/tcir_wpac_${BACKBONE}"
+fi
 
 # ----------------------------- 前置检查 ---------------------------------------
 if [ ! -x "$PYTHON" ]; then

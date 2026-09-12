@@ -70,9 +70,9 @@ with h5py.File("data/TCIR.h5", "r") as hf:
 
 ```python
 from tcintens.data.tcir import TCIRDataset, create_tcir_datasets
-from tcintens.utils.config import Config
+from tcintens.utils.config import load_config
 
-cfg = Config.from_yaml("configs/tcir_regression.yaml")   # 或直接用 dict
+cfg = load_config("configs/tcir_regression.yaml")   # 或直接用 dict
 datasets, meta = create_tcir_datasets(cfg)
 # datasets["train"/"val"/"test"] 即标准 torch Dataset，返回 (Tensor(C,H,W), float风速)
 x, y = datasets["train"][0]
@@ -161,9 +161,11 @@ python scripts/compute_tcir_stats.py \
 python train.py -c configs/tcir_regression.yaml \
     --set data.tcir.h5_path=data/TCIR-ATLN_EPAC_WPAC.h5
 
-# 4) 评估 / 推理
-python evaluate.py --set experiment.name=tcir_regression
-python predict.py --image <某帧或图片路径> --set experiment.name=tcir_regression
+# 4) 评估 / 推理（务必带 -c，否则退回 default.yaml 加载错误数据）
+python evaluate.py -c configs/tcir_regression.yaml
+python predict.py --image <某帧.npy> -c configs/tcir_regression.yaml
+# 或直接对 h5 按帧号推理：
+python predict.py --h5 data/TCIR-ATLN_EPAC_WPAC.h5 --indices 0 -c configs/tcir_regression.yaml
 ```
 
 > 无真实数据时，本仓库 `tests/test_tcir.py` 会用**同 schema 的合成 HDF5**
@@ -182,3 +184,6 @@ python predict.py --image <某帧或图片路径> --set experiment.name=tcir_reg
 - **标注噪声下限**：best-track 强度误差约 10 knot，模型 RMSE 难以长期低于此。
 - **SH 旋转**：南半球气旋旋转方向相反，混训/评估需小心。
 - **单位**：TCIR `intensity` 是 **knot**；若想用 m/s，设 `data.tcir.label_unit: "ms"`（自动 ×0.514444）。
+
+> 专业术语（TCIR / WPAC / Vmax / best-track / by_storm 防泄漏 / knot / 混合精度 / RMSE 等）
+> 见 [README.md §13 术语表](../README.md#13-术语表)。
