@@ -9,13 +9,17 @@ scripts/visualize_test.py —— 测试集预测可视化报告
   (2) 测试集整体指标：RMSE / MAE / R²（基于散点子样本）
   (3) Pred vs True 散点图（含 y=x 参考线）
 
-用法:
-  # 默认（config 即 vgg16，对应 outputs/tcir_wpac/tcir_wpac_v1 权重）
+三种取样模式（互斥，优先级 --worst > --csv > --samples）：
+  # 默认随机抽样 12 张（默认 config 即 vgg16，对应 outputs/tcir_wpac/tcir_wpac_v1 权重）
   python scripts/visualize_test.py -c configs/tcir_wpac_train.yaml
 
-  # 若用 train.sh 训了其它实验目录（如 tcir_wpac_vgg16）
+  # 误差最大的前 N 张：在完整测试集上推理并按 |pred-true| 取 top-N 画图
+  python scripts/visualize_test.py -c configs/tcir_wpac_train.yaml --worst 12
+
+  # 给定 CSV（如 error_analysis 产出的 worst12.csv / test_predictions.csv），
+  # 按其中的 test_index（或 matrix_index）列画出这些样本
   python scripts/visualize_test.py -c configs/tcir_wpac_train.yaml \
-      --set experiment.name=tcir_wpac_vgg16
+      --csv outputs/tcir_wpac/tcir_wpac_v1/worst12.csv
 
 输出: outputs/<experiment.name>/visualization.png
 """
@@ -29,6 +33,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
+import pandas as pd
 import torch
 import matplotlib
 
@@ -70,11 +75,17 @@ def to_composite(x):
 # --------------------------------------------------------------------------- #
 def main():
     parser = build_arg_parser()
-    parser.add_argument("--samples", type=int, default=12, help="样本图数量")
+    parser.add_argument("--samples", type=int, default=12, help="随机抽样的样本图数量")
     parser.add_argument("--scatter-n", type=int, default=800,
                         help="散点图最多使用的测试样本数（提速）")
     parser.add_argument("--out", default=None, help="输出 PNG 路径")
-    parser.add_argument("--seed", type=int, default=1234, help="抽样随机种子")
+    parser.add_argument("--seed", type=int, default=1234, help="随机抽样随机种子")
+    parser.add_argument("--worst", type=int, default=0,
+                        help="若为 >0，则在完整测试集上计算并可视化误差最大的前 N 个样本"
+                             "（覆盖 --samples / --csv）")
+    parser.add_argument("--csv", default=None,
+                        help="给定 CSV（如 worst12.csv / test_predictions.csv），"
+                             "按其中 test_index（或 matrix_index）列画出这些样本（覆盖 --samples）")
     args = parser.parse_args()
 
     cfg = load_config(args.config, args.set)
@@ -101,8 +112,42 @@ def main():
 
     rng = random.Random(args.seed)
 
-    # 抽样图
-    sample_idx = rng.sample(range(n_test), min(args.samples, n_test))
+    # ---------------- 选定要画的样本（test-order 索引） ----------------
+    sample_ids = []  # 可选：风暴 ID，仅 --csv 模式有
+    if args.worst and args.worst > 0:
+        # 全测试集推理，按 |pred-true| 取 top-N
+        print(f"[worst] 在全部 {n_test} 个测试样本上推理，取误差最大前 {args.worst} ...")
+        all_true, all_pred = [], []
+        with torch.no_grad():
+            for i in range(n_test):
+                x, y = test_ds[i]
+                p = model(x.unsqueeze(0).to(device)).item()
+                all_true.append(float(y))
+                all_pred.append(p)
+        all_true = np.array(all_true)
+        all_pred = np.array(all_pred)
+        order = np.argsort(-np.abs(all_pred - all_true))[:args.worst]
+        sample_idx = [int(i) for i in order]
+    elif args.csv:
+        # 按给定 CSV 的 test_index / matrix_index 列取样本
+        df = pd.read_csv(args.csv)
+        if "test_index" in df.columns:
+            sample_idx = [int(v) for v in df["test_index"].tolist()]
+            key_col = "test_index"
+        elif "matrix_index" in df.columns:
+            # matrix_index 是紧凑 h5 行号，需反查回 test-order 索引
+            inv = {int(r): ti for ti, r in enumerate(test_ds.indices)}
+            sample_idx = [inv[int(v)] for v in df["matrix_index"].tolist()]
+            key_col = "matrix_index"
+        else:
+            raise ValueError("CSV 需含 test_index 或 matrix_index 列")
+        if "ID" in df.columns:
+            sample_ids = [str(v) for v in df["ID"].tolist()]
+        print(f"[csv] 从 {args.csv} 读取 {len(sample_idx)} 个样本（列={key_col}）")
+    else:
+        sample_idx = rng.sample(range(n_test), min(args.samples, n_test))
+
+    # ---------------- 画图用的样本图像 + 预测 ----------------
     imgs, preds, trues = [], [], []
     with torch.no_grad():
         for i in sample_idx:
@@ -112,7 +157,7 @@ def main():
             preds.append(p)
             trues.append(float(y))
 
-    # 散点 + 指标（更大子样本）
+    # 散点 + 指标（更大子样本，保持整体评估不变）
     scatter_idx = rng.sample(range(n_test), min(args.scatter_n, n_test))
     sp, st = [], []
     with torch.no_grad():
@@ -138,8 +183,10 @@ def main():
         ax.imshow(im)
         ax.axis("off")
         err = preds[k] - trues[k]
-        ax.set_title(f"Pred {preds[k]:.1f} / True {trues[k]:.1f} kn\nΔ={err:+.1f}",
-                     fontsize=9)
+        title = f"Pred {preds[k]:.1f} / True {trues[k]:.1f} kn\nΔ={err:+.1f}"
+        if k < len(sample_ids) and sample_ids[k]:
+            title = f"{sample_ids[k]}\n" + title
+        ax.set_title(title, fontsize=9)
 
     # 指标条
     axc = fig.add_subplot(gs[rows, :])

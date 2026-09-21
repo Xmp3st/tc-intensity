@@ -22,3 +22,7 @@ outputs/
 # 系统
 .DS_Store
 Thumbs.db
+
+# 本地解释器软链（指向本机 dl-env，机器相关，勿入库）
+/python
+/python3
