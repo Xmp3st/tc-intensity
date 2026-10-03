@@ -1,0 +1,41 @@
+{
+  "h5_path": "/home/yzm/tf/tc_intensity/data/wpac_96.h5",
+  "n_images": 20059,
+  "channels": [
+    "IR1",
+    "WV",
+    "PMW"
+  ],
+  "missing_constant": {
+    "IR1": 16,
+    "WV": 16,
+    "PMW": 8
+  },
+  "missing_allzero": {
+    "IR1": 16,
+    "WV": 16,
+    "PMW": 8
+  },
+  "missing_sparse_lt1pct": {
+    "IR1": 16,
+    "WV": 16,
+    "PMW": 8
+  },
+  "raw_mean": {
+    "IR1": 260.8637,
+    "WV": 232.8299,
+    "PMW": 0.6384
+  },
+  "raw_std": {
+    "IR1": 32.8489,
+    "WV": 15.3889,
+    "PMW": 1.7103
+  },
+  "images_with_any_missing": 24,
+  "per_image_missing_count": {
+    "0": 20035,
+    "1": 8,
+    "2": 16,
+    "3": 0
+  }
+}

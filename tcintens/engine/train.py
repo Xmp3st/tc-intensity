@@ -23,6 +23,7 @@ from ..utils.config import Config
 from ..utils.logger import get_logger
 from ..utils.metrics import classification_metrics, regression_metrics
 from ..utils.misc import count_parameters, humanize_count, resolve_device, set_seed
+from ..utils.runlog import log_run
 from .common import (
     build_loss,
     build_optimizer,
@@ -119,6 +120,8 @@ def train(cfg: Config):
     best_score = -1e9
     epochs_no_improve = 0
     topk = []  # list of (score, epoch)
+    best_metrics = None
+    best_epoch = -1
 
     start_epoch = 0
     # 可选断点续训
@@ -165,6 +168,8 @@ def train(cfg: Config):
         if improved:
             best_score = score
             epochs_no_improve = 0
+            best_metrics = m
+            best_epoch = epoch
             save_checkpoint(os.path.join(ckpt_dir, "best.ckpt"), model, optimizer,
                             epoch, m, cfg, meta, is_best=True)
         else:
@@ -194,4 +199,15 @@ def train(cfg: Config):
     with open(os.path.join(os.path.dirname(ckpt_dir), "metrics.json"), "w", encoding="utf-8") as f:
         json.dump({"best_score": best_score, "task": task, "meta": meta}, f,
                   ensure_ascii=False, indent=2)
+
+    # 记录本次训练的方式与结果到 logs/training_runs.csv（横向对比不同缺失修正策略等）
+    if best_metrics is not None:
+        try:
+            log_run(cfg, best_metrics, best_epoch, meta=meta,
+                    config_file=exp.get("_config_file", ""),
+                    output_dir=os.path.join(exp.get("output_dir", "outputs"),
+                                            exp.get("name", "exp")))
+            logger.info(f"已写入训练日志: logs/training_runs.csv")
+        except Exception as e:  # 日志失败不应影响训练产物
+            logger.warning(f"写入训练日志失败(可忽略): {e}")
     return best_score

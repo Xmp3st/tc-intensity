@@ -13,6 +13,9 @@
 # 运行：
 #   python train.py -c configs/tcir_wpac_train.yaml
 #   python train.py -c configs/tcir_wpac_train.yaml --set train.epochs=60
+# 对比频带缺失修正策略（每次结果记入 logs/training_runs.csv，便于横向对比）：
+#   python train.py -c configs/tcir_wpac_train.yaml --set data.tcir.missing_band=mean
+#   python train.py -c configs/tcir_wpac_train.yaml --set data.tcir.missing_band=drop
 # =============================================================================
 
 experiment:
@@ -50,6 +53,11 @@ data:
     norm_std:  [32.849, 15.389, 1.71]
     resize: 96                    # 201->96，平衡细节与算力
     split_strategy: "by_storm"
+    # ---- 频带(通道)缺失修正：WPAC 影像中 IR1/WV 各 16 帧、PMW 8 帧整通道缺失(全0) ----
+    # 训练前可用 scripts/scan_bands.py 识别并缓存缺失掩码（logs/band_missing_mask.npz）
+    missing_band: "none"         # none(保持0=当前基线) | zero(显式置0) | mean(填通道均值,归一化后中性) | drop(剔除含缺失样本)
+    missing_detect: "constant"   # 缺失判定: constant(整通道常数即缺失) | var(方差<eps)
+    missing_mask_path: "logs/band_missing_mask.npz"  # drop 策略复用的缺失掩码缓存(由 scan_bands 生成)
 
 # -----------------------------------------------------------------------------
 # 增强：台风无 canonical 朝向，旋转/翻转安全且有助于泛化

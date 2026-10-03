@@ -58,6 +58,9 @@ class TCIRDataset(Dataset):
         resize: int = None,
         split: str = "train",
         aug: dict = None,
+        missing_band: str = "none",
+        missing_detect: str = "constant",
+        fill_values=None,
         frame_labels=None,
     ):
         self.h5_path = h5_path
@@ -72,6 +75,9 @@ class TCIRDataset(Dataset):
         self.resize = resize
         self.split = split
         self.aug = aug or {}
+        self.missing_band = missing_band
+        self.missing_detect = missing_detect
+        self.fill_values = fill_values
 
         # 标签：CSV 模式直接由 frame_labels 传入（与 indices 顺序对齐）；
         #       否则从 h5 的 info 表读取（数据集自带标注，无需人工标注）。
@@ -116,6 +122,16 @@ class TCIRDataset(Dataset):
             arr = _fill_nan_interp(arr)
         else:  # zero
             arr = np.nan_to_num(arr, nan=0.0, copy=False)
+
+        # 1.5) 频带缺失检测与修正（训练途中逐样本修正）
+        #      缺失通道(整通道常数)用策略修正：none=保持(0基线) / zero=置0 /
+        #      mean=填通道原始均值(归一化后变中性 0)。fill_values 用原始逐通道均值。
+        if self.missing_band != "none":
+            from .band_health import detect_missing_channels, correct_missing
+            mm = detect_missing_channels(arr, mode=self.missing_detect)
+            if mm.any():
+                arr = correct_missing(arr, mm, strategy=self.missing_band,
+                                      fill_values=self.fill_values)
 
         x = torch.from_numpy(arr)
 
@@ -292,12 +308,29 @@ def create_tcir_datasets(cfg):
     storm_col = tcfg.get("storm_col", "ID")      # 按风暴 ID 切分防泄漏
     split_strategy = tcfg.get("split_strategy", "by_storm")
 
+    # 频带缺失修正配置
+    missing_band = tcfg.get("missing_band", "none")        # none|zero|mean|drop
+    missing_detect = tcfg.get("missing_detect", "constant")  # constant|var
+    missing_mask_path = tcfg.get("missing_mask_path", "logs/band_missing_mask.npz")
+
     aug = cfg.to_dict().get("augmentation", {}).get("train", {})
     common = dict(
         h5_path=h5_path, channels=channels, target=target, label_unit=label_unit,
         nan_mode=nan_mode, normalize=normalize, norm_mean=norm_mean,
         norm_std=norm_std, resize=resize,
+        missing_band=missing_band, missing_detect=missing_detect,
+        fill_values=norm_mean,
     )
+
+    # drop 策略：剔除含缺失通道的样本（掩码行号与 h5 帧顺序一致）
+    bad_rows = set()
+    n_dropped_missing = 0
+    if missing_band == "drop":
+        from .band_health import ensure_band_mask
+        mask = ensure_band_mask(h5_path, channels, missing_mask_path,
+                                mode=missing_detect)
+        bad_rows = set(int(i) for i in np.where(mask.any(axis=1))[0])
+        n_dropped_missing = len(bad_rows)
 
     # --------------------------- CSV 驱动模式（推荐） ---------------------------
     csv_path = tcfg.get("csv_path", None)
@@ -314,6 +347,12 @@ def create_tcir_datasets(cfg):
         if label_unit == "ms":
             labels = labels * KNOT_TO_MS
         storm_ids = df[id_col].to_numpy()
+
+        if bad_rows:
+            keep_b = np.array([int(i) not in bad_rows for i in frame_indices])
+            frame_indices = frame_indices[keep_b]
+            labels = labels[keep_b]
+            storm_ids = storm_ids[keep_b]
 
         if split_strategy == "by_storm":
             tr_i, tr_l, va_i, va_l, te_i, te_l = _split_by_storm(
@@ -345,6 +384,9 @@ def create_tcir_datasets(cfg):
             keep = np.where(mask)[0]
         else:
             keep = np.arange(n)
+
+        if bad_rows:
+            keep = np.array([int(i) not in bad_rows for i in keep])
 
         if split_strategy == "by_storm" and storm_col in info.columns:
             storm_ids = info[storm_col].to_numpy()[keep]
@@ -395,6 +437,8 @@ def create_tcir_datasets(cfg):
         "n_train": n_tr,
         "n_val": n_va,
         "n_test": n_te,
+        "n_dropped_missing": n_dropped_missing,
+        "missing_band": missing_band,
         "label_source": "csv" if (csv_path and tcfg.get("label_source", "h5") == "csv") else "h5",
     }
     return datasets, meta
