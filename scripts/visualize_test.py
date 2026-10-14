@@ -45,6 +45,7 @@ from tcintens.models.tc_model import build_model
 from tcintens.utils.config import build_arg_parser, load_config
 from tcintens.utils.metrics import regression_metrics
 from tcintens.utils.misc import resolve_device
+from tcintens.utils.repro import align_preprocessing
 
 
 # --------------------------------------------------------------------------- #

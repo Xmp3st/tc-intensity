@@ -1,0 +1,9 @@
+{
+  "task": "regression",
+  "metrics": {
+    "mae": 10.8295,
+    "rmse": 14.4778,
+    "r2": 0.8087
+  },
+  "class_names": []
+}

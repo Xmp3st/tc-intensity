@@ -144,6 +144,34 @@ data:
 - **关注区域**：你重点在北太平洋，可用
   `data.tcir.regions: ["WPAC","EPAC","ATL"]` 只取这些区域训练/评估。
 
+### 4.7 训练进度显示与「防停滞」（2026-10-13 起）
+
+本项目曾多次遇到**训练静默卡死**（WSL GPU stall、9P 磁盘 I/O 挂住）：进程还在，
+但终端长时间没有任何输出，只能靠 `nvidia-smi` 猜。为此训练循环内置三层可观测性：
+
+| 机制 | 配置键 | 默认 | 作用 |
+|---|---|---|---|
+| 批内进度 | `train.log_every` | `50` | 每 N 个 batch 打一行 `batch 150/249 (60%) loss=... 已用 3m12s`。**这行久不刷新 = 卡住** |
+| 轮心跳 | `train.log_every_epochs` | `5` | 每 N 轮打一条汇总：当前 loss/val、best、lr、本轮与平均耗时、**已用与剩余 ETA** |
+| 停滞告警 | `train.stall_factor` | `3.0` | 单轮耗时 > 已完成轮耗时中位数 × 该系数 ⇒ 打 `[疑似停滞]` WARNING |
+
+输出样例（终端与 `outputs/<exp>/train.log` 同时可见）：
+
+```
+进度显示：批内每 50 个 batch 一条；每 5 轮一条心跳；停滞阈值 3.0× 中位耗时。
+  [epoch 5/80] batch 200/249 (80%) loss=... 已用 4m02s
+[心跳 5/80] train_loss=... no-val | best=最后一轮(无验证集) | lr=4.87e-04 | 本轮 40s · 均 41s/轮 | 已用 3m25s · 剩余约 51m15s
+```
+
+**要点**
+
+- 心跳对**有/无验证集**都可用（`n_val=0` 时显示 `no-val`，best 显示"最后一轮"）。
+- 想**实时看**：别用 `> log 2>&1 &` 之后不管它，用
+  `python tcir.py train -c <cfg> 2>&1 | tee logs/run.log`，或另开一个终端 `tail -f logs/run.log`。
+  ⚠️ 不要用 `| tail -N` —— 会缓冲，看不到实时输出。
+- 独立脚本 `scripts/train_inpaint_unet.py`（U-Net 修复）有等价开关：
+  `--log-every-batch`（默认 50）、`--log-every-epochs`（默认 5）、`--stall-factor`（默认 3.0）。
+
 ---
 
 ## 5. 端到端最小示例（已在本框架验证）
@@ -184,6 +212,9 @@ python predict.py --h5 data/TCIR-ATLN_EPAC_WPAC.h5 --indices 0 -c configs/tcir_r
 - **标注噪声下限**：best-track 强度误差约 10 knot，模型 RMSE 难以长期低于此。
 - **SH 旋转**：南半球气旋旋转方向相反，混训/评估需小心。
 - **单位**：TCIR `intensity` 是 **knot**；若想用 m/s，设 `data.tcir.label_unit: "ms"`（自动 ×0.514444）。
+- **训练静默卡死**：判据见 §4.7 —— 批内进度行久不刷新，或出现 `[疑似停滞]` 告警；
+  先查 `nvidia-smi` 与 `df -h /mnt/c`（C 盘满会把 WSL 直接打挂），
+  确认真卡死后 kill，再靠 `last.ckpt` 续训（`experiment.resume: true`）。
 
 > 专业术语（TCIR / WPAC / Vmax / best-track / by_storm 防泄漏 / knot / 混合精度 / RMSE 等）
 > 见 [README.md §13 术语表](../README.md#13-术语表)。

@@ -1,0 +1,5 @@
+backbone,run_name,epochs,patience,missing_band,seed,params_M,best_epoch,epochs_ran,val_rmse,val_mae,val_r2,test_rmse,test_mae,test_r2,minutes,ckpt
+resnet18,bb_resnet18_s42,40,10,interp,42,11.21,17,,13.1259,9.7006,0.8401,14.4778,10.8295,0.8087,36.76,/home/yzm/tf/tc_intensity/outputs/tcir_wpac/tcir_wpac_bb/bb_resnet18_s42/checkpoints/best.ckpt
+resnet34,bb_resnet34_s42,40,10,interp,42,21.32,7,,13.7215,10.2988,0.8253,14.2445,10.7017,0.8148,22.84,/home/yzm/tf/tc_intensity/outputs/tcir_wpac/tcir_wpac_bb/bb_resnet34_s42/checkpoints/best.ckpt
+resnet50,bb_resnet50_s42,40,10,interp,42,23.64,26,,12.8707,9.5865,0.8463,13.3842,10.1821,0.8365,47.61,/home/yzm/tf/tc_intensity/outputs/tcir_wpac/tcir_wpac_bb/bb_resnet50_s42/checkpoints/best.ckpt
+efficientnet_b0,bb_efficientnet_b0_s42,40,10,interp,42,4.09,20,,13.4501,9.7154,0.8321,14.145,10.5459,0.8174,40.65,/home/yzm/tf/tc_intensity/outputs/tcir_wpac/tcir_wpac_bb/bb_efficientnet_b0_s42/checkpoints/best.ckpt

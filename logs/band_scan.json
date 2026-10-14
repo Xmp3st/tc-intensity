@@ -1,5 +1,5 @@
 {
-  "h5_path": "/home/yzm/tf/tc_intensity/data/wpac_96.h5",
+  "h5_path": "data/wpac_96.h5",
   "n_images": 20059,
   "channels": [
     "IR1",
@@ -12,11 +12,6 @@
     "PMW": 8
   },
   "missing_allzero": {
-    "IR1": 16,
-    "WV": 16,
-    "PMW": 8
-  },
-  "missing_sparse_lt1pct": {
     "IR1": 16,
     "WV": 16,
     "PMW": 8
@@ -37,5 +32,27 @@
     "1": 8,
     "2": 16,
     "3": 0
+  },
+  "region": {
+    "h5_path": "data/wpac_96.h5",
+    "n_images": 20059,
+    "channels": [
+      "IR1",
+      "WV"
+    ],
+    "sentinel": 0.0,
+    "min_blob": 20,
+    "images_with_region_blob": {
+      "IR1": 3969,
+      "WV": 188
+    },
+    "region_missing_pixels": {
+      "IR1": 882125,
+      "WV": 265493
+    },
+    "region_missing_ratio": {
+      "IR1": 0.004772,
+      "WV": 0.001436
+    }
   }
 }

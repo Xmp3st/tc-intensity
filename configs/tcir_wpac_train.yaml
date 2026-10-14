@@ -16,6 +16,8 @@
 # 对比频带缺失修正策略（每次结果记入 logs/training_runs.csv，便于横向对比）：
 #   python train.py -c configs/tcir_wpac_train.yaml --set data.tcir.missing_band=mean
 #   python train.py -c configs/tcir_wpac_train.yaml --set data.tcir.missing_band=drop
+#   python train.py -c configs/tcir_wpac_train.yaml --set data.tcir.missing_band=interp
+#       （interp=局部区域缺失的空间插值修复；见下方 missing_region_* 参数）
 # =============================================================================
 
 experiment:
@@ -53,11 +55,44 @@ data:
     norm_std:  [32.849, 15.389, 1.71]
     resize: 96                    # 201->96，平衡细节与算力
     split_strategy: "by_storm"
-    # ---- 频带(通道)缺失修正：WPAC 影像中 IR1/WV 各 16 帧、PMW 8 帧整通道缺失(全0) ----
-    # 训练前可用 scripts/scan_bands.py 识别并缓存缺失掩码（logs/band_missing_mask.npz）
-    missing_band: "none"         # none(保持0=当前基线) | zero(显式置0) | mean(填通道均值,归一化后中性) | drop(剔除含缺失样本)
-    missing_detect: "constant"   # 缺失判定: constant(整通道常数即缺失) | var(方差<eps)
-    missing_mask_path: "logs/band_missing_mask.npz"  # drop 策略复用的缺失掩码缓存(由 scan_bands 生成)
+    # 划分种子：固定后「多次训练取最优」(train_3x) 各 run 共用同一 train/val/test 划分，
+    # val 指标才可比、择优才无偏；不设则该值回退到 experiment.seed（每次换种子=换划分）
+    split_seed: 42
+    # ---- 频带(通道)缺失修正 ----
+    # 两类问题：
+    #  (A) 整通道缺失：WPAC 中 IR1/WV 各 16 帧、PMW 8 帧整通道全0（卫星未观测）。
+    #      策略 none(保持0=基线) | zero(显式置0) | mean(填通道均值,归一化后中性) | drop(剔除含缺失样本)
+    #  (B) 局部区域缺失：某通道图像内「某些空间区域」缺数据（如 PMW 条带缺口、IR1/WV 涂抹带），
+    #      用空间插值(inpainting)就地填补，而非整通道丢弃 —— 选 missing_band=interp 启用。
+    missing_band: "none"         # none | zero | mean | drop | interp(局部区域插值)
+                                 # 注：训练时用 --set 开启的修正，会在 train 结束时写入
+                                 # outputs/<dir>/<name>/config_used.yaml；eval/visualize/errors
+                                 # 会自动把缺失修正等预处理键对齐到该训练配置（除非你显式 --set 覆盖）。
+    missing_detect: "constant"   # 整通道缺失判定: constant | var
+    missing_mask_path: "logs/band_missing_mask.npz"  # drop 策略复用的整通道掩码缓存(由 scan_bands 生成)
+
+    # ---- 局部区域缺失插值参数（仅当 missing_band=interp 时生效）----
+    # 缺测判定：精确等于 sentinel(0) 的像素，或低于物理下界 low_thr 的像素（覆盖 bilinear 下采样的涂抹过渡带）。
+    # low_thr 按通道顺序对齐 [IR1, WV, PMW]；PMW 的 0 是合法值，设为 -999 表示「该通道不启用低界/不参与」。
+    missing_region_channels: ["IR1", "WV"]   # 默认只对 IR1/WV 做区域插值（亮温单位，0/异常低值必为缺测）
+    missing_region_sentinel: 0.0             # 缺测哨兵值（TCIR 经 nan_to_num 后为 0）
+    missing_region_low_thr: [150.0, 150.0, -999.0]  # IR1/WV 亮温不可能 <150K，可安全覆盖涂抹带；PMW=-999 禁用
+    missing_region_min_blob: 20              # 缺测连通块最小像素数(96x96)，小于此视为噪声/合法，忽略
+    missing_region_dilate: 1                 # 对缺测掩码膨胀次数，进一步覆盖过渡带
+    missing_region_method: "griddata"        # griddata(scipy 线性+最近邻/均值兜底) | telea/ns(需 cv2,否则回退)
+    missing_region_max_frac: 1.0             # 缺测占比超过此值则退化为通道均值填充(避免大缺口无意义外推)；1.0=不触发
+
+    # ---- 过度损坏样本剔除（缺测面积过大时插值也不可靠 -> 直接剔除，而非硬修）----
+    # 判据三者取 OR，任一满足即剔除该样本：
+    #   * 「坏道」数 >= damage_filter_bad_channels
+    #   * 全图缺测面积占比   >= damage_filter_image_frac
+    #   * 单通道缺测面积占比 >= damage_filter_channel_frac
+    damage_filter: true                    # 开启过滤（训练侧 + 测试侧统一标准）
+    damage_filter_splits: ["train", "val", "test"]   # 作用于哪些子集：test / val / train（可多选）
+    damage_filter_bad_definition: "any"    # 坏道口径: any(有缺测的通道数) | whole(整通道缺失的通道数)
+    damage_filter_bad_channels: 2          # 坏道数 >= 2 -> 剔除
+    damage_filter_image_frac: 0.5          # 全图缺测面积占比 >= 1/2 -> 剔除
+    damage_filter_channel_frac: 0.6667     # 单通道缺测面积占比 >= 2/3 -> 剔除
 
 # -----------------------------------------------------------------------------
 # 增强：台风无 canonical 朝向，旋转/翻转安全且有助于泛化
@@ -89,7 +124,7 @@ model:
 # 训练：回归默认 MSE；knot 量级较大，可用 huber 更稳
 # -----------------------------------------------------------------------------
 train:
-  epochs: 40
+  epochs: 80
   batch_size: 64
   optimizer: "adamw"
   lr: 1.0e-3
@@ -101,8 +136,11 @@ train:
   loss: "mse"                     # mse | huber
   mixed_precision: true           # RTX 5060 (cu128) 加速
   grad_clip: 0.0
-  early_stopping_patience: 12     # 监控 val RMSE，12 轮不降则停
-  save_top_k: 3
+  early_stopping_patience: 20     # 监控 val RMSE，20 轮不降则停（提高耐心，配合更多轮数）
+  # ---- 检查点写入策略（长时训练经 9P 挂载写海量 195MB 大文件会压挂 9P 服务器）----
+  save_top_k: 0                   # 0=不逐轮存 epoch_N.ckpt / top-k（仅保留 best + last），大幅降低写入
+  save_last: true                 # 是否保存 last.ckpt
+  save_last_every: 5              # 每 N 轮存一次 last.ckpt（1=每轮，5=降低写入频率）
   log_every: 50
 
 device:

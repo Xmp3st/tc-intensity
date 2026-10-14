@@ -18,13 +18,20 @@ from ..utils.config import Config
 from ..utils.logger import get_logger
 from ..utils.metrics import classification_metrics, regression_metrics
 from ..utils.misc import resolve_device
+from ..utils.repro import align_preprocessing
 from .common import load_checkpoint
 
 
 def evaluate(cfg: Config):
-    exp = cfg.to_dict()["experiment"]
     device = resolve_device(cfg.to_dict()["device"].get("mode", "auto"))
     logger = get_logger("tc-eval")
+
+    # 一致性守卫：把预处理 / 划分配置对齐到训练时保存的 config_used.yaml。
+    # 例：训练用 `--set data.tcir.missing_band=interp` 开启缺失修正，评估若忘记带
+    # 同样的参数，就会拿「未修正」的测试图评估「在修正图上训练」的模型 -> 指标失真。
+    cfg, _ = align_preprocessing(cfg, overrides=getattr(cfg, "overrides", []),
+                                 logger=logger)
+    exp = cfg.to_dict()["experiment"]
 
     datasets, meta = create_datasets(cfg)
     test_ds = datasets["test"]

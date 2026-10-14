@@ -1,0 +1,44 @@
+{
+  "all": {
+    "n": 20059,
+    "n_storms": 379,
+    "vmax_mean": 54.84
+  },
+  "project_clean": {
+    "n": 15986,
+    "frac_of_all": 0.7969,
+    "n_storms": 379,
+    "vmax_mean": 55.82,
+    "vmax_std": 32.68,
+    "vmax_min": 15.0,
+    "vmax_max": 170.0,
+    "bad_channel_hist": {
+      "0": 15986,
+      "1": 3981,
+      "2": 92
+    },
+    "image_frac_mean": 0.00409,
+    "max_ch_frac_p95": 0.06304
+  },
+  "strict_clean": {
+    "n": 14830,
+    "frac_of_all": 0.7393,
+    "n_storms": 377,
+    "vmax_mean": 55.77,
+    "vmax_std": 32.71,
+    "vmax_min": 15.0,
+    "vmax_max": 170.0,
+    "bad_channel_hist": {
+      "0": 14830,
+      "1": 5104,
+      "2": 125
+    },
+    "image_frac_mean": 0.0023,
+    "max_ch_frac_p95": 0.02561
+  },
+  "project_all_bad_channel_hist": {
+    "0": 15986,
+    "1": 3981,
+    "2": 92
+  }
+}

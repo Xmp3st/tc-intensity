@@ -20,6 +20,7 @@ backbones.py —— 可插拔骨干网络（来自 torchvision）
 """
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torchvision import models
 
 
@@ -84,7 +85,48 @@ def _replace_first_conv(model: nn.Module, in_channels: int, pretrained: bool) ->
     return False
 
 
-def build_backbone(name: str, pretrained: bool = True, in_channels: int = 3):
+def _adapt_vit_input_size(model: nn.Module, size: int) -> None:
+    """把 torchvision 的 ViT 适配到任意边长输入（默认只支持 224）。
+
+    背景：torchvision 的 `VisionTransformer._process_input` 会硬断言
+    `h == w == self.image_size`（默认 224），且 `forward()` 不支持
+    位置编码插值（timm 才有 `interpolate_pos_encoding`）。因此 96×96
+    的输入会直接 AssertionError。
+
+    这里做两件事（卷积 patch embed 的 stride=patch_size 自带尺寸自适应，
+    无需改动，预训练卷积权重仍然对齐）：
+      1) 把 `model.image_size` 改成目标边长 n*patch_size，解除断言；
+      2) 把 `encoder.pos_embedding` 从原网格 g×g 双三次插值到新网格 n×n，
+         class token 的位置编码原样保留（ViT 论文/DEIT 的标准做法）。
+    """
+    p = int(model.patch_size)
+    if size % p != 0:
+        raise ValueError(
+            f"ViT 的 image_size={size} 必须能被 patch_size={p} 整除"
+        )
+    n = size // p
+    pe = model.encoder.pos_embedding.data                 # (1, 1+g*g, D)
+    g = int(round((pe.shape[1] - 1) ** 0.5))
+    if n != g:
+        cls, grid = pe[:, :1], pe[:, 1:]
+        grid = grid.reshape(1, g, g, -1).permute(0, 3, 1, 2)
+        grid = F.interpolate(grid, size=(n, n), mode="bicubic",
+                             align_corners=False)
+        grid = grid.permute(0, 2, 3, 1).reshape(1, n * n, -1)
+        model.encoder.pos_embedding = nn.Parameter(
+            torch.cat([cls, grid], dim=1)
+        )
+    model.image_size = int(size)
+
+
+def build_backbone(name: str, pretrained: bool = True, in_channels: int = 3,
+                   image_size: int = None):
+    """构造骨干网络。
+
+    image_size: 输入边长。仅 ViT 需要（torchvision 硬编码 224），
+                传入后会改写 `image_size` 并插值位置编码以支持该分辨率；
+                其它骨干自由接受任意尺寸，此参数被忽略。
+    """
     if name not in _BUILDERS:
         raise ValueError(
             f"不支持的 backbone: {name}。可选: {list(_BUILDERS.keys())}"
@@ -102,6 +144,9 @@ def build_backbone(name: str, pretrained: bool = True, in_channels: int = 3):
         num_features = model.classifier[0].in_features
         model.classifier = nn.Identity()
     elif name.startswith("vit_b_16"):
+        # torchvision ViT 默认只吃 224×224；若目标分辨率不同，先适配输入尺寸
+        if image_size is not None:
+            _adapt_vit_input_size(model, image_size)
         num_features = model.heads.head.in_features
         model.heads = nn.Identity()
     elif name.startswith("vgg"):

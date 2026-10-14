@@ -82,8 +82,11 @@ def main():
                 out = t.permute(0, 2, 3, 1).numpy().astype(np.float32)     # (K,R,R,C)
                 rows_matrix.append(out)
                 rows_meta.extend(meta)
-                sums += out.sum((0, 1, 2))
-                sqs += (out ** 2).sum((0, 1, 2))
+                # ⚠️ 用 float64 累加：float32 在 1e9 量级逐元素累加会丢精度（详见
+                #    extract_wpac_hires.py 注释；96² 下误差恰好可忽略，但换分辨率会爆）
+                o64 = out.astype(np.float64)
+                sums += o64.sum((0, 1, 2))
+                sqs += (o64 ** 2).sum((0, 1, 2))
                 counts += out.shape[0] * R * R
 
     M = np.concatenate(rows_matrix, axis=0)                   # (M, R, R, C)

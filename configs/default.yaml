@@ -84,7 +84,9 @@ train:
   grad_clip: 0.0                  # 梯度裁剪（0 = 关闭）
   early_stopping_patience: 10     # 验证指标多少个 epoch 无提升则停
   save_top_k: 3                   # 保留验证指标最好的 k 个 checkpoint
-  log_every: 20                   # 每多少 batch 打印一次训练日志
+  log_every: 20                   # 每多少 batch 打印一次训练进度（0 = 关闭）
+  log_every_epochs: 5             # 每多少 epoch 打印一条汇总心跳（含 ETA）
+  stall_factor: 3.0               # 单轮耗时 > 历史中位 × 该系数 ⇒ 打印「疑似停滞」告警
 
 # -----------------------------------------------------------------------------
 # 设备：auto 自动优先 CUDA，否则 CPU

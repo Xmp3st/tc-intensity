@@ -42,6 +42,14 @@ def _coerce(value: str) -> Any:
         return None
     if low in ("true", "false"):
         return low == "true"
+    # 列表 / 字典字面量（如 data.split=[0.8,0.0,0.2]、missing_region_low_thr=[150,150,-999]）
+    if v[:1] in ("[", "{") and v[-1:] in ("]", "}"):
+        try:
+            parsed = yaml.safe_load(v)
+            if isinstance(parsed, (list, dict)):
+                return parsed
+        except yaml.YAMLError:
+            pass
     # 尝试 int / float
     try:
         return int(v)
@@ -128,6 +136,8 @@ def load_config(config_path: str, overrides: Optional[List[str]] = None) -> Conf
             raise ValueError(f"--set 参数格式应为 KEY=VALUE，收到: {item}")
         key, value = item.split("=", 1)
         cfg.set(key.strip(), _coerce(value))
+    # 记录覆盖列表，供一致性守卫（utils/repro.py）使用
+    cfg.overrides = [str(o) for o in (overrides or [])]
     return cfg
 
 

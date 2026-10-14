@@ -1,0 +1,115 @@
+experiment:
+  name: tcir_wpac_r160
+  seed: 42
+  output_dir: outputs/tcir_wpac
+  num_workers: 4
+data:
+  dataset: tcir
+  task: regression
+  root_dir: .
+  split:
+  - 0.7
+  - 0.15
+  - 0.15
+  mean:
+  - 0.485
+  - 0.456
+  - 0.406
+  std:
+  - 0.229
+  - 0.224
+  - 0.225
+  tcir:
+    h5_path: data/wpac_160.h5
+    csv_path: data/wpac_compact.csv
+    label_source: csv
+    channels:
+    - IR1
+    - WV
+    - PMW
+    target: intensity
+    target_col: Vmax
+    label_unit: knots
+    index_col: matrix_index
+    storm_col: ID
+    region_col: data_set
+    regions: null
+    nan_mode: zero
+    normalize: true
+    norm_mean:
+    - 260.8635
+    - 232.8302
+    - 0.6384
+    norm_std:
+    - 32.8478
+    - 15.387
+    - 1.7103
+    resize: 160
+    split_strategy: by_storm
+    split_seed: 42
+    missing_band: interp
+    missing_detect: constant
+    missing_mask_path: logs/band_missing_mask.npz
+    missing_region_channels:
+    - IR1
+    - WV
+    missing_region_sentinel: 0.0
+    missing_region_low_thr:
+    - 150.0
+    - 150.0
+    - -999.0
+    missing_region_min_blob: 20
+    missing_region_dilate: 1
+    missing_region_method: griddata
+    missing_region_max_frac: 1.0
+    damage_filter: true
+    damage_filter_splits:
+    - train
+    - val
+    - test
+    damage_filter_bad_definition: any
+    damage_filter_bad_channels: 2
+    damage_filter_image_frac: 0.5
+    damage_filter_channel_frac: 0.6667
+augmentation:
+  train:
+    random_resized_crop: false
+    horizontal_flip: true
+    rotate: 15
+    color_jitter:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+    normalize: false
+  val:
+    resize: 256
+    center_crop: 96
+    normalize: false
+model:
+  backbone: vgg16
+  pretrained: true
+  freeze_backbone: false
+  dropout: 0.3
+  reg_hidden: 64
+  in_channels: 3
+train:
+  epochs: 80
+  batch_size: 64
+  optimizer: adamw
+  lr: 0.001
+  weight_decay: 0.01
+  scheduler: cosine
+  lr_step_size: 10
+  lr_gamma: 0.1
+  label_smoothing: 0.0
+  loss: mse
+  mixed_precision: true
+  grad_clip: 0.0
+  early_stopping_patience: 20
+  save_top_k: 0
+  save_last: true
+  save_last_every: 5
+  log_every: 50
+device:
+  mode: cuda

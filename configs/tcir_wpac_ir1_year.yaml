@@ -1,0 +1,144 @@
+# =============================================================================
+# IR1 单通道 · 按台风年份（时序 holdout）8:2 · 缺测修正对照实验
+# -----------------------------------------------------------------------------
+# 目的：只保留 IR1 通道，检验四件事对「全集测试」的影响：
+#   a1 无修正                    (missing_band=none)
+#   a2 带修正                    (missing_band=interp)
+#   a3 仅用干净图训练            (train_clean_only=true)
+#   a4 无修正 + 训练期条状干扰增广 (strip_dropout_prob>0)
+#
+# 划分：split_strategy=by_year —— 测试集 = 未见过的年份（2014/2015/2016，
+#       4107 帧 ≈ 20.5%），训练集 = 2003–2013（15952 帧）⇒ 严格防泄漏 + 向未来外推。
+#       无验证集（data.split=[0.8,0,0.2]），best.ckpt = 最后一轮。
+# 测试：全集（damage_filter=false，不做任何过度损坏剔除），四臂测试集完全相同。
+#
+# 运行（示例）：
+#   python tcir.py train -c configs/tcir_wpac_ir1_year.yaml \
+#       --set experiment.name=ir1_year_a1_raw
+#   python tcir.py eval  -c configs/tcir_wpac_ir1_year.yaml \
+#       --set experiment.name=ir1_year_a1_raw
+# =============================================================================
+
+experiment:
+  name: "ir1_year_a1_raw"
+  seed: 42
+  output_dir: "outputs/tcir_wpac_ir1"
+  num_workers: 4
+  # ★ 断点续训：C 盘空间不稳，WSL 可能被系统回收而静默杀掉训练。
+  #   开启后 driver 重跑时会从 last.ckpt 接着训，不必整臂重跑。
+  resume: true
+
+data:
+  dataset: "tcir"
+  task: "regression"
+  root_dir: "."
+  split: [0.8, 0.0, 0.2]          # 无验证集：8:2，best 取最后一轮
+  mean: [0.5]
+  std:  [0.5]
+  tcir:
+    h5_path: "data/wpac_96.h5"
+    csv_path: "data/wpac_compact.csv"
+    label_source: "csv"
+    channels: ["IR1"]             # ★ 只保留 IR1 单通道
+    target: "intensity"
+    target_col: "Vmax"
+    label_unit: "knots"
+    index_col: "matrix_index"
+    storm_col: "ID"
+    region_col: "data_set"
+    regions: null
+    nan_mode: "zero"
+    normalize: true
+    norm_mean: [260.864]          # 逐通道统计里的 IR1 分量
+    norm_std:  [32.849]
+    resize: 96
+
+    # ---- 划分：按台风年份（时序 holdout）----
+    split_strategy: "by_year"
+    split_year_test: [2014, 2015, 2016]   # 显式指定测试年份（≈20.5% 帧）
+    split_seed: 42                        # by_year 不用，仅为与其它配置保持字段一致
+
+    # ---- 频带缺失修正（IR1 单通道）----
+    missing_band: "none"          # none | zero | mean | drop | interp
+    missing_detect: "constant"
+    missing_mask_path: "logs/band_missing_mask.npz"
+
+    # ---- a5：离线 U-Net 预修复的 IR1 缓存（训练/测试输入都改用修复值）----
+    #   由 scripts/build_unet_repaired_ir1.py 生成；null = 关闭（a1~a4 默认）。
+    #   a5 臂用 --set data.tcir.ir1_repaired_path=data/ir1_unet_repaired.npy 开启。
+    ir1_repaired_path: null
+
+    # ---- 局部区域缺失插值参数（missing_band=interp 时生效）----
+    missing_region_channels: ["IR1"]
+    missing_region_sentinel: 0.0
+    missing_region_low_thr: [150.0]
+    missing_region_min_blob: 20
+    missing_region_dilate: 1
+    missing_region_method: "griddata"
+    missing_region_max_frac: 1.0
+
+    # ---- 过度损坏样本剔除：本实验「测全集」，全部关闭 ----
+    damage_filter: false
+    damage_filter_splits: []
+
+    # ---- a3：仅用干净图训练（train 侧过滤掉含缺测的帧）----
+    train_clean_only: false
+
+    # ---- a4：训练期条状缺失干扰增广（真实检测到的 IR1 条带掩码库）----
+    strip_dropout_prob: 0.0
+    strip_masks_path: "logs/ir1_strip_masks.npz"
+
+augmentation:
+  train:
+    random_resized_crop: false
+    horizontal_flip: true
+    rotate: 15
+    color_jitter: [0.0, 0.0, 0.0, 0.0]
+    normalize: false
+  val:
+    resize: 256
+    center_crop: 96
+    normalize: false
+
+model:
+  backbone: "vgg16"
+  pretrained: true
+  freeze_backbone: false
+  dropout: 0.3
+  reg_hidden: 64
+  in_channels: 1                  # ★ 与 tcir.channels 长度一致
+
+train:
+  epochs: 80
+  batch_size: 64
+  optimizer: "adamw"
+  # ★ 回归目标量级 15~170 kn，而 vgg16 头部初始输出 ~0.2（差约 275 倍）：
+  #   首轮梯度极大（∂loss/∂w ≈ 2·(0.2-55)·feat），再放大输出的过程中极易发散。
+  #   2026-10-12 实测 lr=1e-3 + grad_clip=0 → 第 9 轮 train_loss=nan。
+  #   故：梯度裁剪 1.0 + 学习率降到 5e-4（四臂共用同一套超参，保证可比）。
+  lr: 5.0e-4
+  weight_decay: 1.0e-2
+  scheduler: "cosine"
+  lr_step_size: 10
+  lr_gamma: 0.1
+  label_smoothing: 0.0
+  loss: "mse"
+  mixed_precision: true
+  grad_clip: 1.0
+  early_stopping_patience: 20
+  save_top_k: 0
+  # ★ C 盘空间告急（见本文件头/bug 记录）：不存 top-k / epoch_N.ckpt，
+  #   last.ckpt 每 20 轮写一次（每臂 ~0.78G），换取「崩溃后最多只丢 20 轮」
+  #   的续训能力——之前三次崩溃每次都白跑 1.5 小时，这个保险值得。
+  save_last: true
+  save_last_every: 40
+  # ★ 进度显示 / 防停滞：
+  #   log_every        每 50 个 batch 打一条进度（久不刷新 ⇒ 卡住）
+  #   log_every_epochs 每 5 轮打一条汇总心跳（含 best / lr / ETA）
+  #   stall_factor     单轮耗时 > 历史中位 ×3 ⇒ 打印「疑似停滞」告警
+  log_every: 50
+  log_every_epochs: 5
+  stall_factor: 3.0
+
+device:
+  mode: "cuda"

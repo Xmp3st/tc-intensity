@@ -1,0 +1,45 @@
+{
+  "base_name": "tcir_wpac_v2",
+  "missing_band": "interp",
+  "umbrella": "/home/yzm/tf/tc_intensity/outputs/tcir_wpac/tcir_wpac_v2_3x",
+  "runs": [
+    {
+      "run": 0,
+      "seed": 42,
+      "name": "run0_s42",
+      "ckpt": "/home/yzm/tf/tc_intensity/outputs/tcir_wpac/tcir_wpac_v2_3x/run0_s42/checkpoints/best.ckpt",
+      "val_rmse": 13.1905,
+      "val_mae": 9.7658,
+      "val_r2": 0.8385
+    },
+    {
+      "run": 1,
+      "seed": 43,
+      "name": "run1_s43",
+      "ckpt": "/home/yzm/tf/tc_intensity/outputs/tcir_wpac/tcir_wpac_v2_3x/run1_s43/checkpoints/best.ckpt",
+      "val_rmse": 13.0706,
+      "val_mae": 9.5908,
+      "val_r2": 0.8415
+    },
+    {
+      "run": 2,
+      "seed": 44,
+      "name": "run2_s44",
+      "ckpt": "/home/yzm/tf/tc_intensity/outputs/tcir_wpac/tcir_wpac_v2_3x/run2_s44/checkpoints/best.ckpt",
+      "val_rmse": 13.0646,
+      "val_mae": 9.7939,
+      "val_r2": 0.8416,
+      "final_ckpt": "/home/yzm/tf/tc_intensity/outputs/tcir_wpac/tcir_wpac_v2_3x/best_of_3.ckpt"
+    }
+  ],
+  "best": {
+    "run": 2,
+    "seed": 44,
+    "name": "run2_s44",
+    "ckpt": "/home/yzm/tf/tc_intensity/outputs/tcir_wpac/tcir_wpac_v2_3x/run2_s44/checkpoints/best.ckpt",
+    "val_rmse": 13.0646,
+    "val_mae": 9.7939,
+    "val_r2": 0.8416,
+    "final_ckpt": "/home/yzm/tf/tc_intensity/outputs/tcir_wpac/tcir_wpac_v2_3x/best_of_3.ckpt"
+  }
+}

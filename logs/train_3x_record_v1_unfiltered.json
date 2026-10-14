@@ -1,0 +1,45 @@
+{
+  "base_name": "tcir_wpac_v1",
+  "missing_band": "interp",
+  "umbrella": "/home/yzm/tf/tc_intensity/outputs/tcir_wpac/tcir_wpac_v1_3x",
+  "runs": [
+    {
+      "run": 0,
+      "seed": 42,
+      "name": "run0_s42",
+      "ckpt": "/home/yzm/tf/tc_intensity/outputs/tcir_wpac/tcir_wpac_v1_3x/run0_s42/checkpoints/best.ckpt",
+      "val_rmse": 14.7245,
+      "val_mae": 10.3956,
+      "val_r2": 0.8055
+    },
+    {
+      "run": 1,
+      "seed": 43,
+      "name": "run1_s43",
+      "ckpt": "/home/yzm/tf/tc_intensity/outputs/tcir_wpac/tcir_wpac_v1_3x/run1_s43/checkpoints/best.ckpt",
+      "val_rmse": 13.8534,
+      "val_mae": 9.9506,
+      "val_r2": 0.8279,
+      "final_ckpt": "/home/yzm/tf/tc_intensity/outputs/tcir_wpac/tcir_wpac_v1_3x/best_of_3.ckpt"
+    },
+    {
+      "run": 2,
+      "seed": 44,
+      "name": "run2_s44",
+      "ckpt": "/home/yzm/tf/tc_intensity/outputs/tcir_wpac/tcir_wpac_v1_3x/run2_s44/checkpoints/best.ckpt",
+      "val_rmse": 13.8691,
+      "val_mae": 10.1287,
+      "val_r2": 0.8275
+    }
+  ],
+  "best": {
+    "run": 1,
+    "seed": 43,
+    "name": "run1_s43",
+    "ckpt": "/home/yzm/tf/tc_intensity/outputs/tcir_wpac/tcir_wpac_v1_3x/run1_s43/checkpoints/best.ckpt",
+    "val_rmse": 13.8534,
+    "val_mae": 9.9506,
+    "val_r2": 0.8279,
+    "final_ckpt": "/home/yzm/tf/tc_intensity/outputs/tcir_wpac/tcir_wpac_v1_3x/best_of_3.ckpt"
+  }
+}

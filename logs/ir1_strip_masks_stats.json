@@ -1,0 +1,41 @@
+{
+  "h5": "data/wpac_96.h5",
+  "csv": "data/wpac_compact.csv",
+  "train_years": [
+    "2003",
+    "2004",
+    "2005",
+    "2006",
+    "2007",
+    "2008",
+    "2009",
+    "2010",
+    "2011",
+    "2012",
+    "2013"
+  ],
+  "n_candidate_frames": 15952,
+  "n_detected_frames": 3450,
+  "n_unique_masks": 3355,
+  "mask_shape": [
+    96,
+    96
+  ],
+  "area_frac": {
+    "min": 0.004665798611111111,
+    "median": 0.03298611111111111,
+    "p90": 0.10440538194444442,
+    "max": 0.4066840277777778
+  },
+  "bbox_short_long_ratio": {
+    "median": 0.23170731707317074,
+    "p90": 0.8151566951566951
+  },
+  "params": {
+    "min_area_frac": 0.002,
+    "max_area_frac": 0.5,
+    "max_ratio": 0.75,
+    "min_blob": 20,
+    "dilate": 1
+  }
+}

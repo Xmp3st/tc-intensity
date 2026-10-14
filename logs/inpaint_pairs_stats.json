@@ -1,0 +1,17 @@
+{
+  "h5": "data/wpac_96.h5",
+  "csv": "data/wpac_compact.csv",
+  "masks_src": "logs/ir1_strip_masks.npz",
+  "n_train_clean": 12502,
+  "n_test_clean": 3588,
+  "n_masks": 1155,
+  "mask_area_frac_range": [
+    0.05,
+    0.4
+  ],
+  "mask_area_frac": {
+    "min": 0.05002170138888889,
+    "median": 0.08051215277777778,
+    "max": 0.3605685763888889
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "best_score": -13.1259,
+  "task": "regression",
+  "meta": {
+    "task": "regression",
+    "class_names": [],
+    "num_classes": 1,
+    "in_channels": 3,
+    "target": "Vmax",
+    "label_unit": "knots",
+    "n_train": 14062,
+    "n_val": 3008,
+    "n_test": 2893,
+    "n_dropped_missing": 0,
+    "missing_band": "interp",
+    "damage_filter": {
+      "enabled": true,
+      "splits": [
+        "train",
+        "val",
+        "test"
+      ],
+      "log": [
+        {
+          "split": "train",
+          "n_in": 14115,
+          "n_dropped": 53,
+          "by_bad_channels": 49,
+          "by_image_frac": 4,
+          "by_channel_frac": 12,
+          "bad_definition": "any"
+        },
+        {
+          "split": "val",
+          "n_in": 3031,
+          "n_dropped": 23,
+          "by_bad_channels": 23,
+          "by_image_frac": 16,
+          "by_channel_frac": 16,
+          "bad_definition": "any"
+        },
+        {
+          "split": "test",
+          "n_in": 2913,
+          "n_dropped": 20,
+          "by_bad_channels": 20,
+          "by_image_frac": 2,
+          "by_channel_frac": 3,
+          "bad_definition": "any"
+        }
+      ]
+    },
+    "label_source": "csv"
+  }
+}

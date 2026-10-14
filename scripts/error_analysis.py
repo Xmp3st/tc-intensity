@@ -31,11 +31,15 @@ from tcintens.models.tc_model import build_model
 from tcintens.utils.config import parse_config
 from tcintens.utils.metrics import regression_metrics
 from tcintens.utils.misc import resolve_device
+from tcintens.utils.repro import align_preprocessing
 from tcintens.engine.common import load_checkpoint
 
 
 def main():
     cfg = parse_config()
+    # 一致性守卫：把预处理/划分键对齐到训练时保存的 config_used.yaml
+    cfg, _ = align_preprocessing(cfg, overrides=getattr(cfg, "overrides", []),
+                                 logger=None)
     d = cfg.to_dict()
     exp = d["experiment"]
     device = resolve_device(d["device"].get("mode", "auto"))

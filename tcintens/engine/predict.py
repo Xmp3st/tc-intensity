@@ -26,9 +26,21 @@ from ..data.tcir import CHANNELS
 from ..models.tc_model import build_model
 from ..utils.config import Config
 from ..utils.misc import resolve_device
+from ..utils.repro import align_preprocessing, load_train_config
 from .common import load_checkpoint
 
 KNOT_TO_MS = 0.514444
+
+# _preprocess 真正会使用的一致性键（决定单张输入如何变成张量）。
+# 注意：缺失修正（missing_band）不在此列 —— 本路径未实现，见 predict() 里的警告。
+PREDICT_KEYS = [
+    "data.tcir.channels",
+    "data.tcir.nan_mode",
+    "data.tcir.normalize",
+    "data.tcir.norm_mean",
+    "data.tcir.norm_std",
+    "data.tcir.resize",
+]
 
 
 def _load_array(path: str) -> np.ndarray:

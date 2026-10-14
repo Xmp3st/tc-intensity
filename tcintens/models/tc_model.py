@@ -25,13 +25,14 @@ class TCIntensityModel(nn.Module):
         dropout: float = 0.3,
         reg_hidden: int = 128,
         in_channels: int = 3,
+        image_size: int = None,
     ):
         super().__init__()
         self.backbone_name = backbone_name
         self.task = task
         self.in_channels = in_channels
         self.backbone, self.num_features = build_backbone(
-            backbone_name, pretrained, in_channels
+            backbone_name, pretrained, in_channels, image_size=image_size
         )
 
         if freeze_backbone:
@@ -64,6 +65,9 @@ def build_model(cfg) -> TCIntensityModel:
     data_cfg = cfg.to_dict()["data"]
     task = data_cfg.get("task", "classification")
     num_classes = len(data_cfg.get("class_names", [])) if task == "classification" else 1
+    # 输入边长：ViT 需要它来适配位置编码（torchvision 硬编码 224）；
+    # 其它骨干自由接受任意尺寸，该值被忽略。取数据侧的实际缩放目标。
+    image_size = (data_cfg.get("tcir") or {}).get("resize")
     model = TCIntensityModel(
         backbone_name=m.get("backbone", "resnet18"),
         task=task,
@@ -73,5 +77,6 @@ def build_model(cfg) -> TCIntensityModel:
         dropout=m.get("dropout", 0.3),
         reg_hidden=m.get("reg_hidden", 128),
         in_channels=m.get("in_channels", 3),
+        image_size=image_size,
     )
     return model
